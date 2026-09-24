@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+@theme {
+  --color-cream: #F4F4E7;
+  --color-paper-warm: #F7EEDC;
+  --color-paper-dim: #EAE6D6;
+  --color-navy-primary: #263B52;
+  --color-navy-deep: #0F253B;
+  --color-navy-panel: #314B65;
+  --color-navy-surface: #182A3A;
+  --color-ink-dark: #182A3A;
+  --color-ink-muted: #47617C;
+  --color-ink-subtle: #74777D;
+  --color-pastel-peach: #F2C8B4;
+  --color-pastel-lavender: #C8C4F2;
+  --color-pastel-yellow: #F3E8A8;
+  --color-pastel-mint: #D8EEDF;
+  --color-pastel-ice: #C9DCF1;
+  --color-border-subtle: #D5CEAE;
+  --color-border-light: #E2DCBE;
+  --color-border-structural: #263B52;
+
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-serif: 'EB Garamond', Georgia, serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+@layer base {
+  html, body {
+    margin: 0;
+    padding: 0;
+    background-color: #F4F4E7;
+    color: #182A3A;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  table {
+    border-collapse: collapse;
+  }
+}
+
+.paper-stipple {
+  background-image: radial-gradient(#263B52 0.75px, transparent 0.75px);
+  background-size: 16px 16px;
+}
+
+.hero-gradient {
+  background: radial-gradient(circle at 75% 30%, #FDF4EE 0%, #EFEBF9 45%, #F4F4E7 85%);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

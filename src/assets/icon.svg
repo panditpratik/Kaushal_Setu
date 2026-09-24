@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 165 110" width="100%" height="100%" fill="none">
+  <!-- Kaushal Setu Logo Mark Only (Arch K + Trajectory Beacon) -->
+  <g fill="#263B52">
+    <!-- Left vertical stem of K -->
+    <path d="M 38 18 C 30 18, 26 21, 26 29 L 26 89 C 26 90, 27 91, 28 91 L 43 91 C 44 91, 45 90, 45 89 L 45 61 C 45 52, 43 45, 40 38 C 43 32, 46 25, 49 19 C 45 18, 41 18, 38 18 Z"/>
+    <!-- Swooping Arch Bridge (Setu) lifting off from bottom-left to top-right -->
+    <path d="M 12 91 L 34 91 C 41 72, 60 48, 98 31 C 114 24, 131 20, 144 18 C 141 15, 135 15, 128 16 C 90 22, 53 45, 34 70 L 34 76 C 26 82, 18 87, 12 91 Z"/>
+    <!-- Right leg / pillar of K -->
+    <path d="M 78 52 C 84 48, 90 45, 96 42 L 96 89 C 96 90, 97 91, 98 91 L 113 91 C 114 91, 115 90, 115 89 L 115 36 C 102 40, 89 45, 78 52 Z"/>
+    <!-- Trajectory Beacon / Sun Node -->
+    <circle cx="152" cy="18" r="9.5" fill="#F2A57C"/>
+  </g>
+</svg>
