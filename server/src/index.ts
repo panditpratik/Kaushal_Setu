@@ -1,7 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { traineesRouter } from './routes/trainees.js';
+import traineesRouter from './routes/trainees.js';
 import { cohortsRouter } from './routes/cohorts.js';
 import { outcomesRouter } from './routes/outcomes.js';
 import { trainingProvidersRouter } from './routes/trainingProviders.js';

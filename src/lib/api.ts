@@ -10,12 +10,48 @@ import {
 
 const API_BASE = 'http://localhost:4000/api';
 
+export interface RawTraineeDossier {
+  trainee: {
+    id: string;
+    name: string;
+    gender: string | null;
+    aadhaarLinked: boolean;
+    epfoId: string | null;
+  };
+  verification: {
+    aadhaar: string;
+    epfo: string;
+  };
+  cohort: {
+    name: string;
+    trainingProvider: string;
+  } | null;
+  certifications: Array<{
+    name: string;
+    course: string;
+    issuedAt: string;
+    certificateNumber: string;
+  }>;
+  activeEmployment: {
+    jobTitle: string;
+    employerName: string;
+    monthlySalary: number;
+    tenureMonths: number | null;
+  } | null;
+  trajectoryVelocity: {
+    wageLiftPercent: number | null;
+    tenureMonths: number | null;
+  };
+  stages: any[];
+}
+
 export interface TraineeDossierResponse {
   profile: TraineeProfile;
   milestones: TrajectoryMilestone[];
   skillGaps: SkillGauge[];
   followUps: FollowUpItem[];
   activeVelocity: string;
+  raw?: RawTraineeDossier;
 }
 
 export interface OutcomesSummaryResponse {
@@ -50,6 +86,50 @@ export async function fetchTraineeDossier(id: string = 'priya'): Promise<Trainee
     const res = await fetch(`${API_BASE}/trainees/${encodeURIComponent(id)}/dossier`);
     if (!res.ok) throw new Error(`HTTP error ${res.status}`);
     const json = await res.json();
+
+    // Canonical direct dossier shape with trajectoryVelocity
+    if (json.trajectoryVelocity) {
+      const wageLift = json.trajectoryVelocity.wageLiftPercent ?? 22;
+      const tenure = json.trajectoryVelocity.tenureMonths ?? 14;
+      const activeVelocity = `+${wageLift}% Net Wage Lift (${tenure}M Tenure)`;
+      
+      const primaryCert = json.certifications?.[0];
+      const activeEmp = json.activeEmployment;
+      const currentSalary = activeEmp?.monthlySalary || 22000;
+      const baselineSalary = Math.round(currentSalary / (1 + wageLift / 100));
+
+      const profile: TraineeProfile = {
+        id: json.trainee.id,
+        name: json.trainee.name,
+        course: primaryCert?.course || 'Warehouse Operations & Inventory Management',
+        level: primaryCert?.name || 'Certified Warehouse Associate',
+        trainingPartner: json.cohort?.trainingProvider || 'SkillBridge Academy',
+        partnerDistrict: 'Delhi NCR Region',
+        currentRole: activeEmp?.jobTitle || 'Warehouse Associate',
+        company: activeEmp?.employerName || 'Nexora Logistics Pvt Ltd',
+        companyLocation: 'Sector 62, Industrial Corridor, Delhi NCR',
+        tenureMonths: tenure,
+        currentSalary,
+        baselineSalary,
+        wageDeltaPercent: wageLift,
+        epfoId: json.trainee.epfoId || 'EPFO-MH-88213',
+        supervisorName: 'Vikram R.',
+        supervisorRole: 'Lead Operations & Inventory',
+        aadhaarVerified: json.verification?.aadhaar === 'VERIFIED',
+        threePartyVerified: json.verification?.aadhaar === 'VERIFIED' && json.verification?.epfo === 'VERIFIED',
+        skillsCount: { total: 4, verified: 3 }
+      };
+
+      return {
+        profile,
+        milestones: TRAJECTORY_MILESTONES,
+        skillGaps: SKILL_GAUGES,
+        followUps: FOLLOW_UP_ITEMS,
+        activeVelocity,
+        raw: json
+      };
+    }
+
     if (json.success && json.data) {
       return {
         profile: json.data.profile,
