@@ -99,11 +99,11 @@ export const Footer: React.FC = () => {
         </div>
 
         {/* Bottom Bar: Copyright & Restrained Legal Links */}
-        <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] font-mono text-[#52667A]">
-          <div>
+        <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] font-mono text-[#52667A] text-center sm:text-left">
+          <div className="max-w-md sm:max-w-none">
             © 2026 Kaushal Setu · National Council for Vocational Education and Training (NCVET)
           </div>
-          <div className="flex items-center gap-4 text-[#47617C]">
+          <div className="flex flex-wrap items-center justify-center sm:justify-end gap-x-3 gap-y-1 text-[#47617C]">
             <span className="hover:text-[#0F253B] cursor-pointer">Privacy Policy</span>
             <span>·</span>
             <span className="hover:text-[#0F253B] cursor-pointer">Terms of Telemetry</span>

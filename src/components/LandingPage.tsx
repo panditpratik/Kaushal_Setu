@@ -22,7 +22,7 @@ interface LandingPageProps {
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
   return (
-    <div className="flex flex-col w-full selection:bg-[#263B52] selection:text-white">
+    <div className="flex flex-col w-full selection:bg-[#263B52] selection:text-white overflow-x-hidden">
       
       {/* 1. HERO SECTION */}
       <section className="relative w-full hero-gradient border-b border-[#D5CEAE] overflow-hidden pt-[64px] pb-[72px] lg:pt-[72px] lg:pb-[72px]">
@@ -30,21 +30,25 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
         <div className="absolute inset-0 paper-stipple opacity-15 pointer-events-none" />
 
         <div className="max-w-[1440px] mx-auto px-5 sm:px-8 md:px-10 lg:px-12 relative z-10">
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(520px,0.95fr)] gap-[56px] lg:gap-[72px] items-center">
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(520px,0.95fr)] gap-10 lg:gap-12 xl:gap-[72px] items-center">
             
             {/* Left: Eyebrow, Headline, Description, Dual 56px CTAs, Verification Row */}
-            <div className="flex flex-col items-start">
+            <div className="flex flex-col items-start w-full">
               
               {/* Eyebrow with moved Telemetry status element */}
-              <div className="inline-flex items-center gap-2.5 px-3 py-1.5 rounded bg-white/90 border border-[#D5CEAE] text-[11px] font-mono font-bold tracking-widest text-[#263B52] uppercase mb-6 shadow-xs">
-                <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
-                <span>LONGITUDINAL SKILLING INTELLIGENCE · NCVET PARITY</span>
-                <span className="h-3 w-px bg-[#D5CEAE]" />
-                <span className="text-[#52667A]">TEL-NODE: IN-DEL-9842</span>
+              <div className="inline-flex flex-wrap sm:flex-nowrap items-center gap-2 sm:gap-2.5 px-2.5 sm:px-3 py-1.5 rounded bg-white/90 border border-[#D5CEAE] text-[10px] sm:text-[11px] font-mono font-bold tracking-wider sm:tracking-widest text-[#263B52] uppercase mb-6 shadow-xs max-w-full">
+                <span className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse shrink-0" />
+                  <span className="truncate">LONGITUDINAL SKILLING INTELLIGENCE</span>
+                </span>
+                <span className="hidden md:inline h-3 w-px bg-[#D5CEAE]" />
+                <span className="hidden md:inline text-[#52667A]">NCVET PARITY</span>
+                <span className="hidden sm:inline h-3 w-px bg-[#D5CEAE]" />
+                <span className="hidden sm:inline text-[#52667A] shrink-0">TEL-NODE: IN-DEL-9842</span>
               </div>
 
               {/* Headline: Sans "Beyond the" + Serif-Italic "Certificate." */}
-              <h1 className="font-sans font-extrabold tracking-[-0.035em] text-[#0F253B] leading-[0.95] mb-6 text-[clamp(60px,6vw,92px)]">
+              <h1 className="font-sans font-extrabold tracking-[-0.035em] text-[#0F253B] leading-[0.95] mb-6 text-[clamp(48px,5.5vw,92px)] sm:text-[clamp(56px,6vw,92px)]">
                 Beyond the <br />
                 <span className="font-serif italic font-normal text-[#263B52] tracking-normal block">
                   Certificate.
@@ -52,32 +56,32 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
               </h1>
 
               {/* Description: 20-22px, line-height 1.55, max-width 680px */}
-              <p className="text-[20px] sm:text-[21px] lg:text-[22px] text-[#102A43] leading-[1.55] max-w-[680px] mb-8">
+              <p className="text-[18px] sm:text-[20px] lg:text-[22px] text-[#102A43] leading-[1.55] max-w-[680px] mb-8">
                 KaushalSetu tracks every vocational trainee beyond graduation — verifying employment through{' '}
                 <span className="text-[#0F253B] font-semibold">3-party consensus</span>, monitoring{' '}
                 <span className="text-[#0F253B] font-semibold">18-month wage trajectories</span>, and closing real-time curriculum gaps.
               </p>
 
               {/* Dual 56px Action Buttons */}
-              <div className="flex flex-col sm:flex-row gap-[18px] items-stretch sm:items-center w-full">
+              <div className="flex flex-col xl:flex-row gap-3.5 xl:gap-[18px] items-stretch xl:items-center w-full max-w-[520px] xl:max-w-none">
                 <button
                   onClick={() => onNavigate('trainee-dashboard', 'trainee')}
-                  className="h-[56px] px-8 bg-[#263B52] hover:bg-[#0F253B] text-[#F4F4E7] font-semibold text-xs uppercase tracking-wider rounded border border-[#263B52] flex items-center justify-center gap-2.5 transition-all shadow-xs group w-full sm:w-auto cursor-pointer"
+                  className="h-[56px] px-4 sm:px-6 xl:px-8 bg-[#263B52] hover:bg-[#0F253B] text-[#F4F4E7] font-semibold text-xs uppercase tracking-wider rounded border border-[#263B52] flex items-center justify-center gap-2 sm:gap-2.5 transition-all shadow-xs group w-full xl:w-auto shrink-0 cursor-pointer"
                 >
-                  <span>EXPLORE TRAINEE DOSSIER (PRIYA)</span>
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                  <span className="text-center">EXPLORE TRAINEE DOSSIER (PRIYA)</span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform shrink-0" />
                 </button>
 
                 <button
                   onClick={() => onNavigate('login')}
-                  className="h-[56px] px-8 bg-white hover:bg-[#FAF7EE] text-[#263B52] font-semibold text-xs uppercase tracking-wider rounded border border-[#263B52] flex items-center justify-center gap-2 transition-all shadow-xs w-full sm:w-auto cursor-pointer"
+                  className="h-[56px] px-4 sm:px-6 xl:px-8 bg-white hover:bg-[#FAF7EE] text-[#263B52] font-semibold text-xs uppercase tracking-wider rounded border border-[#263B52] flex items-center justify-center gap-2 transition-all shadow-xs w-full xl:w-auto shrink-0 cursor-pointer"
                 >
-                  <span>STAKEHOLDER PORTAL LOGIN</span>
+                  <span className="text-center">STAKEHOLDER PORTAL LOGIN</span>
                 </button>
               </div>
 
               {/* Editorial Verification Row (no pills/badges) */}
-              <div className="mt-9 pt-6 border-t border-[#D5CEAE] flex flex-wrap items-center gap-6 sm:gap-8 text-xs font-mono text-[#52667A] w-full">
+              <div className="mt-9 pt-6 border-t border-[#D5CEAE] flex flex-wrap items-center gap-4 sm:gap-6 lg:gap-8 text-xs font-mono text-[#52667A] w-full">
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
                   <span className="text-[#102A43]">Aadhaar Biometric Linked</span>
@@ -99,12 +103,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
               <div className="w-full max-w-[560px] bg-white border border-[#263B52] rounded-lg p-4 sm:p-5 shadow-xs relative">
                 
                 {/* Header Tag Strip */}
-                <div className="flex items-center justify-between pb-3.5 border-b border-[#D5CEAE] mb-3.5 text-[11px] font-mono text-[#47617C]">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-3.5 border-b border-[#D5CEAE] mb-3.5 text-[11px] font-mono text-[#47617C]">
                   <span className="font-bold text-[#0F253B] uppercase tracking-wider flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-[#F2C8B4]" />
-                    LONGITUDINAL TRAJECTORY ARC
+                    <span className="w-2 h-2 rounded-full bg-[#F2C8B4] shrink-0" />
+                    <span>LONGITUDINAL TRAJECTORY ARC</span>
                   </span>
-                  <span className="text-[#52667A] font-semibold">TEL-NODE #4892</span>
+                  <span className="text-[#52667A] font-semibold shrink-0">TEL-NODE #4892</span>
                 </div>
 
                 {/* The SVG Plane Illustration */}
@@ -112,23 +116,23 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                   <img 
                     src={heroPlaneSvg} 
                     alt="KaushalSetu Trajectory Arc & Paper Plane" 
-                    className="w-full h-auto object-contain select-none"
+                    className="w-full h-auto object-contain select-none" 
                   />
                 </div>
 
                 {/* Trajectory Velocity Footer Strip */}
-                <div className="mt-3.5 p-3.5 bg-[#FAF7EE] border border-[#D5CEAE] rounded flex items-center justify-between gap-3 text-xs font-mono">
+                <div className="mt-3.5 p-3.5 bg-[#FAF7EE] border border-[#D5CEAE] rounded flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono">
                   <div className="min-w-0">
                     <span className="text-[#52667A] text-[10px] block uppercase tracking-wider">
                       Priya's Active Velocity:
                     </span>
-                    <span className="text-[#0F253B] font-bold truncate block">
+                    <span className="text-[#0F253B] font-bold block">
                       +22% Net Wage Lift (14M Tenure)
                     </span>
                   </div>
                   <button 
                     onClick={() => onNavigate('trainee-dashboard', 'trainee')}
-                    className="px-3 py-1.5 bg-[#263B52] hover:bg-[#0F253B] text-[#F4F4E7] text-[11px] font-semibold uppercase tracking-wider rounded transition-colors shrink-0 cursor-pointer"
+                    className="px-3 py-1.5 bg-[#263B52] hover:bg-[#0F253B] text-[#F4F4E7] text-[11px] font-semibold uppercase tracking-wider rounded transition-colors shrink-0 cursor-pointer self-start sm:self-auto"
                   >
                     View Dossier
                   </button>
@@ -542,41 +546,41 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
             </div>
 
             <div className="lg:col-span-6">
-              <div className="bg-white border border-[#263B52] rounded-lg p-6 shadow-xs">
-                <div className="flex items-center justify-between pb-4 border-b border-[#D5CEAE] mb-6">
+              <div className="bg-white border border-[#263B52] rounded-lg p-4 sm:p-6 shadow-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-[#D5CEAE] mb-6">
                   <div className="flex items-center gap-2">
-                    <Database className="w-4 h-4 text-[#263B52]" />
+                    <Database className="w-4 h-4 text-[#263B52] shrink-0" />
                     <span className="font-mono font-bold text-xs text-[#0F253B] uppercase tracking-wider">
                       Live Consensus Telemetry Audit
                     </span>
                   </div>
-                  <span className="font-mono text-[10px] text-emerald-800 bg-[#D8EEDF] px-2 py-0.5 rounded font-bold border border-[#B6DBC0]">
+                  <span className="font-mono text-[10px] text-emerald-800 bg-[#D8EEDF] px-2 py-0.5 rounded font-bold border border-[#B6DBC0] shrink-0">
                     SYSTEM SECURE
                   </span>
                 </div>
 
                 <div className="space-y-3 font-mono text-xs">
-                  <div className="flex items-center justify-between p-3 bg-[#FAF7EE] border border-[#D5CEAE] rounded">
-                    <span className="text-[#47617C]">Candidate:</span>
-                    <span className="font-bold text-[#0F253B]">Priya Sharma (KS-9812-PUN)</span>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-[#FAF7EE] border border-[#D5CEAE] rounded gap-1">
+                    <span className="text-[#47617C] shrink-0">Candidate:</span>
+                    <span className="font-bold text-[#0F253B] break-all sm:break-normal">Priya Sharma (KS-9812-PUN)</span>
                   </div>
-                  <div className="flex items-center justify-between p-3 bg-[#FAF7EE] border border-[#D5CEAE] rounded">
-                    <span className="text-[#47617C]">Employer:</span>
-                    <span className="font-bold text-[#0F253B]">Tata Motors Ancillary Ltd.</span>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-[#FAF7EE] border border-[#D5CEAE] rounded gap-1">
+                    <span className="text-[#47617C] shrink-0">Employer:</span>
+                    <span className="font-bold text-[#0F253B] break-all sm:break-normal">Tata Motors Ancillary Ltd.</span>
                   </div>
-                  <div className="flex items-center justify-between p-3 bg-[#FAF7EE] border border-[#D5CEAE] rounded">
-                    <span className="text-[#47617C]">EPFO Linkage:</span>
-                    <span className="text-emerald-700 font-bold">MH/PUN/0088219 ✓ Verified</span>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-[#FAF7EE] border border-[#D5CEAE] rounded gap-1">
+                    <span className="text-[#47617C] shrink-0">EPFO Linkage:</span>
+                    <span className="text-emerald-700 font-bold break-all sm:break-normal">MH/PUN/0088219 ✓ Verified</span>
                   </div>
-                  <div className="flex items-center justify-between p-3 bg-[#FAF7EE] border border-[#D5CEAE] rounded">
-                    <span className="text-[#47617C]">VTP Center Sign-Off:</span>
-                    <span className="text-emerald-700 font-bold">TC-NCVET-CENTURION-01 ✓ Verified</span>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-[#FAF7EE] border border-[#D5CEAE] rounded gap-1">
+                    <span className="text-[#47617C] shrink-0">VTP Center Sign-Off:</span>
+                    <span className="text-emerald-700 font-bold break-all sm:break-normal">TC-NCVET-CENTURION-01 ✓ Verified</span>
                   </div>
                 </div>
 
-                <div className="mt-6 pt-4 border-t border-[#D5CEAE] flex items-center justify-between text-[11px] font-mono text-[#52667A]">
-                  <span>Cryptographic Proof:</span>
-                  <code className="bg-[#FAF7EE] px-2 py-1 rounded text-[#263B52] border border-[#D5CEAE]">
+                <div className="mt-6 pt-4 border-t border-[#D5CEAE] flex flex-col sm:flex-row sm:items-center justify-between text-[11px] font-mono text-[#52667A] gap-2">
+                  <span className="shrink-0">Cryptographic Proof:</span>
+                  <code className="bg-[#FAF7EE] px-2 py-1 rounded text-[#263B52] border border-[#D5CEAE] break-all text-[10px] sm:text-[11px]">
                     0x9b4a8e23f001c9a174d82bce49f72c
                   </code>
                 </div>

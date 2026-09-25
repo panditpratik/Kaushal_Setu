@@ -29,6 +29,8 @@
   html, body {
     margin: 0;
     padding: 0;
+    width: 100%;
+    overflow-x: hidden;
     background-color: #F4F4E7;
     color: #182A3A;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
