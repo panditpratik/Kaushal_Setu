@@ -9,99 +9,62 @@ import { PrismaClient } from '@prisma/client';
 const router = Router();
 const prisma = new PrismaClient();
 
+const traineeIncludeConfig = {
+  user: { select: { name: true, email: true } },
+  verifications: true,
+  certifications: {
+    include: { certification: { include: { course: true } } },
+  },
+  employmentRecords: {
+    include: { employer: { select: { companyName: true, sector: true } } },
+    orderBy: { startDate: 'desc' as const },
+  },
+  skillAssessments: {
+    orderBy: { assessmentDate: 'desc' as const },
+    include: {
+      skillGaps: {
+        include: {
+          interventions: {
+            include: {
+              outcomes: {
+                include: {
+                  insights: true,
+                  employer: { select: { companyName: true } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  cohortEnrollments: {
+    include: { cohort: { include: { trainingProvider: true } } },
+    orderBy: { enrolledAt: 'desc' as const },
+    take: 1,
+  },
+};
+
 router.get('/:id/dossier', async (req: Request, res: Response) => {
-  const idParam = req.params.id;
-  const id = Array.isArray(idParam) ? idParam[0] : idParam;
+  const rawId = req.params.id;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
 
   try {
-    let trainee = null;
-
-    if (id.toLowerCase() === 'priya' || id === 'default') {
-      trainee = await prisma.trainee.findFirst({
-        where: {
-          user: {
+    const isPriya = id.toLowerCase() === 'priya' || id === 'default';
+    const trainee = isPriya
+      ? await prisma.trainee.findFirst({
+          where: {
             OR: [
-              { name: { contains: 'Priya', mode: 'insensitive' } },
-              { email: { contains: 'priya', mode: 'insensitive' } },
+              { user: { name: { contains: 'Priya', mode: 'insensitive' } } },
+              { user: { email: { contains: 'priya', mode: 'insensitive' } } },
             ],
           },
-        },
-        include: {
-          user: { select: { name: true, email: true } },
-          verifications: true,
-          certifications: {
-            include: { certification: { include: { course: true } } },
-          },
-          employmentRecords: {
-            include: { employer: { select: { companyName: true, sector: true } } },
-            orderBy: { startDate: 'desc' },
-          },
-          skillAssessments: {
-            orderBy: { assessmentDate: 'desc' },
-            include: {
-              skillGaps: {
-                include: {
-                  interventions: {
-                    include: {
-                      outcomes: {
-                        include: {
-                          insights: true,
-                          employer: { select: { companyName: true } },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-          cohortEnrollments: {
-            include: { cohort: { include: { trainingProvider: true } } },
-            orderBy: { enrolledAt: 'desc' },
-            take: 1,
-          },
-        },
-      });
-    } else {
-      trainee = await prisma.trainee.findUnique({
-        where: { id },
-        include: {
-          user: { select: { name: true, email: true } },
-          verifications: true,
-          certifications: {
-            include: { certification: { include: { course: true } } },
-          },
-          employmentRecords: {
-            include: { employer: { select: { companyName: true, sector: true } } },
-            orderBy: { startDate: 'desc' },
-          },
-          skillAssessments: {
-            orderBy: { assessmentDate: 'desc' },
-            include: {
-              skillGaps: {
-                include: {
-                  interventions: {
-                    include: {
-                      outcomes: {
-                        include: {
-                          insights: true,
-                          employer: { select: { companyName: true } },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-          cohortEnrollments: {
-            include: { cohort: { include: { trainingProvider: true } } },
-            orderBy: { enrolledAt: 'desc' },
-            take: 1,
-          },
-        },
-      });
-    }
+          include: traineeIncludeConfig,
+        })
+      : await prisma.trainee.findUnique({
+          where: { id },
+          include: traineeIncludeConfig,
+        });
 
     if (!trainee) {
       return res.status(404).json({ error: 'Trainee not found' });
@@ -115,7 +78,7 @@ router.get('/:id/dossier', async (req: Request, res: Response) => {
           intervention.outcomes.map((outcome) => ({
             assessment: {
               id: assessment.id,
-              date: assessment.assessmentDate,
+              date: assessment.assessmentDate.toISOString(),
               overallScore: assessment.overallScore,
             },
             skillGap: {
@@ -128,15 +91,15 @@ router.get('/:id/dossier', async (req: Request, res: Response) => {
               type: intervention.type,
               providerName: intervention.providerName,
               status: intervention.status,
-              startDate: intervention.startDate,
-              endDate: intervention.endDate,
+              startDate: intervention.startDate.toISOString(),
+              endDate: intervention.endDate ? intervention.endDate.toISOString() : null,
             },
             outcome: {
               id: outcome.id,
               type: outcome.outcomeType,
               wageLiftPercent: outcome.wageLiftPercent,
               employerName: outcome.employer?.companyName ?? null,
-              recordedAt: outcome.recordedAt,
+              recordedAt: outcome.recordedAt.toISOString(),
             },
             insights: outcome.insights.map((i) => ({
               text: i.text,
@@ -184,7 +147,7 @@ router.get('/:id/dossier', async (req: Request, res: Response) => {
       certifications: trainee.certifications.map((tc) => ({
         name: tc.certification.name,
         course: tc.certification.course.title,
-        issuedAt: tc.issuedAt,
+        issuedAt: tc.issuedAt.toISOString(),
         certificateNumber: tc.certificateNumber,
       })),
       activeEmployment: activeEmployment
