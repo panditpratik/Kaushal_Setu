@@ -9,6 +9,7 @@ import { employersRouter } from './routes/employers.js';
 import { coursesRouter } from './routes/courses.js';
 import { certificationsRouter } from './routes/certifications.js';
 import { interventionsRouter } from './routes/interventions.js';
+import crudEntitiesRouter from './routes/crudEntities.js';
 
 dotenv.config();
 
@@ -49,6 +50,7 @@ app.use('/api/employers', employersRouter);
 app.use('/api/courses', coursesRouter);
 app.use('/api/certifications', certificationsRouter);
 app.use('/api/interventions', interventionsRouter);
+app.use('/api', crudEntitiesRouter);
 
 // 404 handler
 app.use((_req: Request, res: Response) => {
