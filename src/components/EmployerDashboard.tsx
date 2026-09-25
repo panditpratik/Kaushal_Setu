@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { EMPLOYER_CANDIDATES } from '../data/mockData';
 import type { EmployerCandidate } from '../types';
+import { fetchEmployerCandidates } from '../lib/api';
 import { 
   Building2, 
   Users, 
@@ -20,6 +21,14 @@ interface EmployerDashboardProps {
 export function EmployerDashboard({ onNavigateHome, onSwitchRole }: EmployerDashboardProps) {
   const [candidates, setCandidates] = useState<EmployerCandidate[]>(EMPLOYER_CANDIDATES);
   const [selectedCandidate, setSelectedCandidate] = useState<EmployerCandidate | null>(null);
+
+  useEffect(() => {
+    fetchEmployerCandidates('tata').then(res => {
+      if (res && res.length > 0) {
+        setCandidates(res);
+      }
+    });
+  }, []);
   
   // Feedback Transmitter Form State
   const [feedbackCandidate, setFeedbackCandidate] = useState('CAND-01');

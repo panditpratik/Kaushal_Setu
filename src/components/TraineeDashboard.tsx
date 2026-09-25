@@ -1,11 +1,12 @@
-import { useState } from 'react';
-import type { TraineeProfile, TrajectoryMilestone } from '../types';
+import { useState, useEffect } from 'react';
+import type { TraineeProfile, TrajectoryMilestone, SkillGauge, FollowUpItem } from '../types';
 import { 
   PRIYA_PROFILE, 
   TRAJECTORY_MILESTONES, 
   SKILL_GAUGES, 
   FOLLOW_UP_ITEMS 
 } from '../data/mockData';
+import { fetchTraineeDossier } from '../lib/api';
 import { OutcomeVerificationModal } from './OutcomeVerificationModal';
 import { 
   ShieldCheck, 
@@ -30,9 +31,26 @@ interface TraineeDashboardProps {
 
 export function TraineeDashboard({ onNavigateHome, onSwitchRole }: TraineeDashboardProps) {
   const [profile, setProfile] = useState<TraineeProfile>(PRIYA_PROFILE);
+  const [milestones, setMilestones] = useState<TrajectoryMilestone[]>(TRAJECTORY_MILESTONES);
+  const [skillGauges, setSkillGauges] = useState<SkillGauge[]>(SKILL_GAUGES);
+  const [followUpItems, setFollowUpItems] = useState<FollowUpItem[]>(FOLLOW_UP_ITEMS);
   const [selectedMilestone, setSelectedMilestone] = useState<TrajectoryMilestone>(TRAJECTORY_MILESTONES[4]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'trajectory' | 'gauges' | 'ledger'>('trajectory');
+
+  useEffect(() => {
+    fetchTraineeDossier('priya').then(res => {
+      if (res && res.profile) {
+        setProfile(res.profile);
+        if (res.milestones) setMilestones(res.milestones);
+        if (res.skillGaps) setSkillGauges(res.skillGaps);
+        if (res.followUps) setFollowUpItems(res.followUps);
+        if (res.milestones && res.milestones.length >= 5) {
+          setSelectedMilestone(res.milestones[4]);
+        }
+      }
+    });
+  }, []);
 
   const handleVerificationSuccess = (newSalary: number, uan: string) => {
     const delta = ((newSalary - profile.baselineSalary) / profile.baselineSalary) * 100;
@@ -215,7 +233,7 @@ export function TraineeDashboard({ onNavigateHome, onSwitchRole }: TraineeDashbo
             }`}
           >
             <Clock className="w-3.5 h-3.5" />
-            <span>Action Ledger ({FOLLOW_UP_ITEMS.length})</span>
+            <span>Action Ledger ({followUpItems.length})</span>
           </button>
         </div>
 
@@ -288,7 +306,7 @@ export function TraineeDashboard({ onNavigateHome, onSwitchRole }: TraineeDashbo
                   />
 
                   {/* Milestone Interactive Nodes */}
-                  {TRAJECTORY_MILESTONES.map((milestone) => {
+                  {milestones.map((milestone) => {
                     const isSelected = selectedMilestone.step === milestone.step;
                     const isCompleted = milestone.type === 'completed';
                     const isCurrent = milestone.type === 'current';
@@ -433,7 +451,7 @@ export function TraineeDashboard({ onNavigateHome, onSwitchRole }: TraineeDashbo
 
               {/* Gauges List */}
               <div className="space-y-4 pt-1">
-                {SKILL_GAUGES.map((gauge) => {
+                {skillGauges.map((gauge) => {
                   const isGap = gauge.status === 'gap';
                   return (
                     <div key={gauge.id} className="p-3.5 rounded bg-[#FAF7EE] border border-[#D5CEAE] space-y-2">
@@ -525,7 +543,7 @@ export function TraineeDashboard({ onNavigateHome, onSwitchRole }: TraineeDashbo
 
               {/* Ledger Items List */}
               <div className="space-y-3 pt-1">
-                {FOLLOW_UP_ITEMS.map((item) => (
+                {followUpItems.map((item) => (
                   <div key={item.id} className="p-3.5 rounded bg-[#EDE8D5]/70 border border-[#D5CEAE] space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-mono text-[#687C92] flex items-center gap-1">

@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { PROVIDER_BATCHES } from '../data/mockData';
 import type { ProviderBatch } from '../types';
+import { fetchProviderBatches } from '../lib/api';
 import { 
   UserCheck, 
   Award, 
@@ -16,9 +17,18 @@ interface ProviderDashboardProps {
 }
 
 export function ProviderDashboard({ onNavigateHome, onSwitchRole }: ProviderDashboardProps) {
-  const [batches] = useState<ProviderBatch[]>(PROVIDER_BATCHES);
+  const [batches, setBatches] = useState<ProviderBatch[]>(PROVIDER_BATCHES);
   const [selectedBatch, setSelectedBatch] = useState<ProviderBatch>(PROVIDER_BATCHES[0]);
   const [moduleDeployed, setModuleDeployed] = useState(false);
+
+  useEffect(() => {
+    fetchProviderBatches('centurion').then(res => {
+      if (res && res.length > 0) {
+        setBatches(res);
+        setSelectedBatch(res[0]);
+      }
+    });
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#F4F4E7] text-[#0F253B] flex flex-col selection:bg-[#263B52] selection:text-white">

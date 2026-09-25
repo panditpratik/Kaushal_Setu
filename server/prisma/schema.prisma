@@ -1,0 +1,322 @@
+// Kaushal Setu — Core Data Model
+// Prisma schema. Run: npx prisma migrate dev --name init_core_model
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Identity / roles
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  TRAINEE
+  EMPLOYER
+  TRAINING_PROVIDER
+  GOVERNMENT
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  role      UserRole
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  trainee          Trainee?
+  employer         Employer?
+  trainingProvider TrainingProvider?
+  governmentUser   GovernmentUser?
+
+  @@index([role])
+}
+
+model TrainingProvider {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orgName         String
+  accreditationId String   @unique
+  createdAt       DateTime @default(now())
+
+  cohorts Cohort[]
+}
+
+model Employer {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyName String
+  sector      String
+  createdAt   DateTime @default(now())
+
+  outcomes          Outcome[]
+  employmentRecords EmploymentRecord[]
+  feedback          EmployerFeedback[]
+}
+
+model GovernmentUser {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department String
+  region     String
+  createdAt  DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Trainee
+// ---------------------------------------------------------------------------
+
+model Trainee {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dob           DateTime
+  gender        String?
+  aadhaarLinked Boolean  @default(false)
+  epfoId        String?
+  createdAt     DateTime @default(now())
+
+  cohortEnrollments CohortEnrollment[]
+  certifications    TraineeCertification[]
+  skillAssessments  SkillAssessment[]
+  employmentRecords EmploymentRecord[]
+  verifications     Verification[]
+  followUps         FollowUp[]
+  employerFeedback  EmployerFeedback[]
+
+  @@index([aadhaarLinked])
+}
+
+// ---------------------------------------------------------------------------
+// Training Provider → Cohort → Trainee (many-to-many via enrollment)
+// ---------------------------------------------------------------------------
+
+model Cohort {
+  id                 String           @id @default(cuid())
+  trainingProviderId String
+  trainingProvider   TrainingProvider @relation(fields: [trainingProviderId], references: [id], onDelete: Cascade)
+  name               String
+  startDate          DateTime
+  endDate            DateTime?
+  createdAt          DateTime         @default(now())
+
+  enrollments CohortEnrollment[]
+
+  @@index([trainingProviderId])
+}
+
+model CohortEnrollment {
+  id         String   @id @default(cuid())
+  cohortId   String
+  cohort     Cohort   @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  traineeId  String
+  trainee    Trainee  @relation(fields: [traineeId], references: [id], onDelete: Cascade)
+  enrolledAt DateTime @default(now())
+
+  @@unique([cohortId, traineeId])
+  @@index([traineeId])
+}
+
+// ---------------------------------------------------------------------------
+// Course → Certification → Trainee (many-to-many)
+// ---------------------------------------------------------------------------
+
+model Course {
+  id       String @id @default(cuid())
+  title    String
+  category String
+
+  certifications Certification[]
+}
+
+model Certification {
+  id          String @id @default(cuid())
+  courseId    String
+  course      Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  name        String
+  issuingBody String
+
+  trainees TraineeCertification[]
+
+  @@index([courseId])
+}
+
+model TraineeCertification {
+  id                String        @id @default(cuid())
+  traineeId         String
+  trainee           Trainee       @relation(fields: [traineeId], references: [id], onDelete: Cascade)
+  certificationId   String
+  certification     Certification @relation(fields: [certificationId], references: [id], onDelete: Cascade)
+  issuedAt          DateTime      @default(now())
+  certificateNumber String        @unique
+
+  @@unique([traineeId, certificationId])
+  @@index([certificationId])
+}
+
+// ---------------------------------------------------------------------------
+// Longitudinal pipeline:
+// SkillAssessment → SkillGap → Intervention → Outcome → Insight
+// ---------------------------------------------------------------------------
+
+model SkillAssessment {
+  id             String   @id @default(cuid())
+  traineeId      String
+  trainee        Trainee  @relation(fields: [traineeId], references: [id], onDelete: Cascade)
+  assessmentDate DateTime @default(now())
+  overallScore   Float
+  assessorType   String
+
+  skillGaps SkillGap[]
+
+  @@index([traineeId])
+}
+
+enum GapSeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model SkillGap {
+  id                String          @id @default(cuid())
+  skillAssessmentId String
+  skillAssessment   SkillAssessment @relation(fields: [skillAssessmentId], references: [id], onDelete: Cascade)
+  skillName         String
+  severity          GapSeverity
+
+  interventions Intervention[]
+
+  @@index([skillAssessmentId])
+}
+
+enum InterventionStatus {
+  PLANNED
+  ACTIVE
+  COMPLETED
+  DROPPED
+}
+
+model Intervention {
+  id           String             @id @default(cuid())
+  skillGapId   String
+  skillGap     SkillGap           @relation(fields: [skillGapId], references: [id], onDelete: Cascade)
+  type         String
+  providerName String
+  startDate    DateTime
+  endDate      DateTime?
+  status       InterventionStatus @default(PLANNED)
+
+  outcomes Outcome[]
+
+  @@index([skillGapId])
+}
+
+enum OutcomeType {
+  EMPLOYED
+  UNEMPLOYED
+  UPSKILLED
+  NO_CHANGE
+}
+
+model Outcome {
+  id              String       @id @default(cuid())
+  interventionId  String
+  intervention    Intervention @relation(fields: [interventionId], references: [id], onDelete: Cascade)
+  outcomeType     OutcomeType
+  wageLiftPercent Float?
+  employerId      String?
+  employer        Employer?    @relation(fields: [employerId], references: [id])
+  recordedAt      DateTime     @default(now())
+
+  insights Insight[]
+
+  @@index([interventionId])
+  @@index([employerId])
+}
+
+model Insight {
+  id              String   @id @default(cuid())
+  outcomeId       String
+  outcome         Outcome  @relation(fields: [outcomeId], references: [id], onDelete: Cascade)
+  text            String
+  confidenceScore Float
+  generatedAt     DateTime @default(now())
+
+  @@index([outcomeId])
+}
+
+// ---------------------------------------------------------------------------
+// Employment, verification, follow-up, feedback
+// ---------------------------------------------------------------------------
+
+model EmploymentRecord {
+  id            String    @id @default(cuid())
+  traineeId     String
+  trainee       Trainee   @relation(fields: [traineeId], references: [id], onDelete: Cascade)
+  employerId    String
+  employer      Employer  @relation(fields: [employerId], references: [id])
+  jobTitle      String
+  startDate     DateTime
+  endDate       DateTime?
+  monthlySalary Float
+
+  @@index([traineeId])
+  @@index([employerId])
+}
+
+enum VerificationType {
+  AADHAAR
+  EPFO
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  FAILED
+}
+
+model Verification {
+  id         String             @id @default(cuid())
+  traineeId  String
+  trainee    Trainee            @relation(fields: [traineeId], references: [id], onDelete: Cascade)
+  type       VerificationType
+  status     VerificationStatus @default(PENDING)
+  verifiedAt DateTime?
+
+  @@index([traineeId])
+  @@index([type, status])
+}
+
+model FollowUp {
+  id           String   @id @default(cuid())
+  traineeId    String
+  trainee      Trainee  @relation(fields: [traineeId], references: [id], onDelete: Cascade)
+  followUpDate DateTime
+  status       String
+  notes        String?
+
+  @@index([traineeId])
+}
+
+model EmployerFeedback {
+  id           String   @id @default(cuid())
+  traineeId    String
+  trainee      Trainee  @relation(fields: [traineeId], references: [id], onDelete: Cascade)
+  employerId   String
+  employer     Employer @relation(fields: [employerId], references: [id])
+  rating       Int
+  feedbackText String?
+  submittedAt  DateTime @default(now())
+
+  @@index([traineeId])
+  @@index([employerId])
+}

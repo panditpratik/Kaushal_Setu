@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import heroPlaneSvg from '../assets/hero-plane.svg';
 import type { AppView, StakeholderRole } from '../types';
+import { fetchTraineeDossier, fetchOutcomesSummary } from '../lib/api';
 import { 
   ArrowRight, 
   CheckCircle2, 
@@ -21,6 +22,34 @@ interface LandingPageProps {
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
+  const [velocityText, setVelocityText] = useState<string>("+22% Net Wage Lift (14M Tenure)");
+  const [metrics, setMetrics] = useState({
+    trackedTrainees: "1.48M",
+    growthYoY: "+18% YoY",
+    retention6m: "89.2%",
+    consensusStandard: "3-Party",
+    avgWageLift: "+38.2%"
+  });
+
+  useEffect(() => {
+    fetchTraineeDossier('priya').then(res => {
+      if (res && res.activeVelocity) {
+        setVelocityText(res.activeVelocity);
+      }
+    });
+
+    fetchOutcomesSummary().then(res => {
+      if (res) {
+        setMetrics({
+          trackedTrainees: res.trackedTrainees.formatted,
+          growthYoY: res.trackedTrainees.growthYoY,
+          retention6m: res.sixMonthRetention.formatted,
+          consensusStandard: res.consensusStandard.label.split(' ')[0],
+          avgWageLift: res.avgWageLift.formatted
+        });
+      }
+    });
+  }, []);
   return (
     <div className="flex flex-col w-full selection:bg-[#263B52] selection:text-white overflow-x-hidden">
       
@@ -127,7 +156,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                       Priya's Active Velocity:
                     </span>
                     <span className="text-[#0F253B] font-bold block">
-                      +22% Net Wage Lift (14M Tenure)
+                      {velocityText}
                     </span>
                   </div>
                   <button 
@@ -156,8 +185,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                 Tracked Trainees
               </span>
               <div className="flex items-baseline gap-2 mt-1 text-[#0F253B]">
-                <span className="text-3xl lg:text-4xl font-extrabold tracking-tight">1.48M</span>
-                <span className="font-mono text-xs text-emerald-700 font-bold">+18% YoY</span>
+                <span className="text-3xl lg:text-4xl font-extrabold tracking-tight">{metrics.trackedTrainees}</span>
+                <span className="font-mono text-xs text-emerald-700 font-bold">{metrics.growthYoY}</span>
               </div>
               <p className="text-xs text-[#52667A] mt-1.5 leading-relaxed">
                 Continuous longitudinal tracking across 28 states & UTs
@@ -169,7 +198,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                 6-Month Retention
               </span>
               <div className="flex items-baseline gap-2 mt-1 text-[#0F253B]">
-                <span className="text-3xl lg:text-4xl font-extrabold tracking-tight">89.2%</span>
+                <span className="text-3xl lg:text-4xl font-extrabold tracking-tight">{metrics.retention6m}</span>
                 <span className="font-mono text-xs text-[#263B52] font-semibold">Verified</span>
               </div>
               <p className="text-xs text-[#52667A] mt-1.5 leading-relaxed">
@@ -182,7 +211,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                 Consensus Standard
               </span>
               <div className="flex items-baseline gap-2 mt-1 text-[#0F253B]">
-                <span className="text-3xl lg:text-4xl font-extrabold tracking-tight">3-Party</span>
+                <span className="text-3xl lg:text-4xl font-extrabold tracking-tight">{metrics.consensusStandard}</span>
                 <span className="font-mono text-xs text-emerald-700 font-semibold">Protocol</span>
               </div>
               <p className="text-xs text-[#52667A] mt-1.5 leading-relaxed">
@@ -195,7 +224,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                 Avg. Wage Lift
               </span>
               <div className="flex items-baseline gap-2 mt-1 text-[#0F253B]">
-                <span className="text-3xl lg:text-4xl font-extrabold tracking-tight">+38.2%</span>
+                <span className="text-3xl lg:text-4xl font-extrabold tracking-tight">{metrics.avgWageLift}</span>
                 <span className="font-mono text-xs text-[#263B52] font-semibold">At 12M</span>
               </div>
               <p className="text-xs text-[#52667A] mt-1.5 leading-relaxed">
