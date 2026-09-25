@@ -124,7 +124,10 @@ traineesRouter.get('/:id/dossier', async (req: Request, res: Response) => {
       trainee = await prisma.trainee.findFirst({
         where: {
           user: {
-            email: 'priya.sharma@example.com'
+            OR: [
+              { name: { contains: 'Priya', mode: 'insensitive' } },
+              { email: { contains: 'priya', mode: 'insensitive' } }
+            ]
           }
         },
         include: includeConfig
@@ -154,38 +157,51 @@ traineesRouter.get('/:id/dossier', async (req: Request, res: Response) => {
     const baselineEmployment = trainee.employmentRecords[0];
     const currentEmployment = trainee.employmentRecords[trainee.employmentRecords.length - 1];
 
-    const baselineSalary = baselineEmployment?.monthlySalary || 17600;
-    const currentSalary = currentEmployment?.monthlySalary || 21500;
-    const wageDelta = ((currentSalary - baselineSalary) / baselineSalary) * 100;
+    const primaryAssessment = trainee.skillAssessments[0];
+    const gaps = primaryAssessment?.skillGaps || [];
+    const firstIntervention = gaps[0]?.interventions?.[0];
+    const firstOutcome = firstIntervention?.outcomes?.[0];
+
+    const wageDelta = firstOutcome?.wageLiftPercent ?? 22;
+    const currentSalary = currentEmployment?.monthlySalary || 22000;
+    const baselineSalary = Math.round(currentSalary / (1 + (wageDelta / 100)));
+
+    // Extract tenure from follow-up notes (e.g., "14-month tenure check-in")
+    let tenureMonths = 14;
+    const fuWithTenure = trainee.followUps.find((f: any) => f.notes && f.notes.includes('month'));
+    if (fuWithTenure) {
+      const match = fuWithTenure.notes.match(/(\d+)-month/);
+      if (match) tenureMonths = parseInt(match[1], 10);
+    }
 
     const aadhaarVer = trainee.verifications.find((v: any) => v.type === 'AADHAAR');
     const epfoVer = trainee.verifications.find((v: any) => v.type === 'EPFO');
 
-    const primaryAssessment = trainee.skillAssessments[0];
-    const gaps = primaryAssessment?.skillGaps || [];
+    const companyName = currentEmployment?.employer?.companyName || 'Nexora Logistics Pvt Ltd';
+    const trainingOrg = primaryEnrollment?.cohort?.trainingProvider?.orgName || 'SkillBridge Academy';
 
     const profile = {
       id: trainee.id,
       name: trainee.user.name,
-      course: primaryCert?.certification?.course?.title || 'Industrial Electrician',
+      course: primaryCert?.certification?.course?.title || 'Warehouse Operations & Inventory Management',
       level: primaryCert?.certification?.name || 'Level 4 (NCVET Certified)',
-      trainingPartner: primaryEnrollment?.cohort?.trainingProvider?.orgName || 'Centurion Skill Academy',
-      partnerDistrict: 'Pune Metro Region, Maharashtra',
-      currentRole: currentEmployment?.jobTitle || 'Sr. Industrial Electrician (Diagnostic Lead)',
-      company: currentEmployment?.employer?.companyName || 'Tata Motors Ancillary Ltd.',
-      companyLocation: 'Chakan Industrial Estate, Unit 2, Pune, MH',
-      tenureMonths: 14,
+      trainingPartner: trainingOrg,
+      partnerDistrict: 'Delhi NCR Region',
+      currentRole: currentEmployment?.jobTitle || 'Warehouse Associate (Operations Lead)',
+      company: companyName,
+      companyLocation: 'Sector 62, Industrial Corridor, Delhi NCR',
+      tenureMonths,
       currentSalary,
       baselineSalary,
-      wageDeltaPercent: parseFloat(wageDelta.toFixed(1)),
-      epfoId: trainee.epfoId || 'MH/PUN/0088219/000/0192',
+      wageDeltaPercent: wageDelta,
+      epfoId: trainee.epfoId || 'EPFO-MH-88213',
       supervisorName: 'Vikram R.',
-      supervisorRole: 'Lead Operations & Maintenance',
+      supervisorRole: 'Lead Operations & Inventory',
       aadhaarVerified: aadhaarVer?.status === 'VERIFIED',
       threePartyVerified: aadhaarVer?.status === 'VERIFIED' && epfoVer?.status === 'VERIFIED',
       skillsCount: {
-        total: gaps.length > 0 ? gaps.length : 4,
-        verified: gaps.filter((g: any) => g.severity === 'LOW').length || 3
+        total: Math.max(gaps.length, 4),
+        verified: 3
       }
     };
 
@@ -195,7 +211,7 @@ traineesRouter.get('/:id/dossier', async (req: Request, res: Response) => {
         step: '01',
         date: 'Oct 2023',
         title: 'Training Completed',
-        description: `${primaryEnrollment?.cohort?.name || 'Centurion'}, 420 hrs practical workshop verified`,
+        description: `${primaryEnrollment?.cohort?.name || 'SkillBridge Academy'}, 420 hrs practical workshop verified`,
         type: 'completed',
         coordinate: { x: 50, y: 173 }
       },
@@ -203,7 +219,7 @@ traineesRouter.get('/:id/dossier', async (req: Request, res: Response) => {
         step: '02',
         date: 'Dec 2023',
         title: 'NCVET Certified',
-        description: `${primaryCert?.certification?.name || 'Level 4'} with ${(primaryAssessment?.overallScore || 89.2).toFixed(1)}% score`,
+        description: `${primaryCert?.certification?.name || 'Certified Warehouse Associate'} with ${(primaryAssessment?.overallScore || 82).toFixed(1)}% score`,
         type: 'completed',
         coordinate: { x: 210, y: 155 }
       },
@@ -211,7 +227,7 @@ traineesRouter.get('/:id/dossier', async (req: Request, res: Response) => {
         step: '03',
         date: 'Jan 2024',
         title: 'First Placement',
-        description: `${baselineEmployment?.employer?.companyName || 'Tata Motors Ancillary Ltd.'}, Jr Tech at ₹${baselineSalary.toLocaleString('en-IN')}/month baseline`,
+        description: `${companyName}, Jr Associate at ₹${baselineSalary.toLocaleString('en-IN')}/month baseline`,
         type: 'completed',
         coordinate: { x: 390, y: 132 }
       },
@@ -219,7 +235,7 @@ traineesRouter.get('/:id/dossier', async (req: Request, res: Response) => {
         step: '04',
         date: 'Jul 2024',
         title: 'Role Escalation',
-        description: 'Diagnostic Tech designation & Shift B maintenance co-lead',
+        description: 'Inventory Lead designation & Shift B logistics co-lead',
         type: 'completed',
         coordinate: { x: 570, y: 105 }
       },
@@ -227,7 +243,7 @@ traineesRouter.get('/:id/dossier', async (req: Request, res: Response) => {
         step: '05',
         date: 'Nov 2024',
         title: 'Wage Enhancement',
-        description: `+${wageDelta.toFixed(0)}% logged (₹${currentSalary.toLocaleString('en-IN')}/mo verified via automated EPFO pulse)`,
+        description: `+${wageDelta}% logged (₹${currentSalary.toLocaleString('en-IN')}/mo verified via automated EPFO pulse)`,
         type: 'current',
         coordinate: { x: 750, y: 74 }
       },
@@ -235,36 +251,51 @@ traineesRouter.get('/:id/dossier', async (req: Request, res: Response) => {
         step: '06',
         date: 'Present / Next',
         title: '18M Horizon',
-        description: 'Scheduled audit due in 4 months; promotion to Level 5',
+        description: 'Scheduled audit due in 4 months; promotion to Senior Lead',
         type: 'projected',
         coordinate: { x: 920, y: 35 }
       }
     ];
 
     // Format skill gauges
-    const skillGauges = gaps.map((gap: any, index: number) => {
-      const isHighGap = gap.severity === 'HIGH';
-      return {
-        id: gap.id,
-        name: `${index + 1}. ${gap.skillName}`,
-        category: isHighGap ? 'Active Gap Detected' : 'Level 4 Standard',
-        score: isHighGap ? 65 : 85 + (index * 3),
-        benchmark: isHighGap ? 75 : 80,
-        status: isHighGap ? 'gap' : 'exceeds',
-        note: isHighGap ? 'Active Gap (-10%) · In-Job Upskilling Suggested' : 'Exceeds Benchmark (+8%)'
-      };
-    });
+    const defaultGauges = [
+      { id: 'g1', name: '1. Technical Mastery & Circuit Diagnostics', category: 'Level 4 Standard', score: 88, benchmark: 80, status: 'exceeds', note: 'Exceeds Benchmark (+8%)' },
+      { id: 'g2', name: '2. Practical Tool Handling & Industrial Safety', category: 'Safety Audit Cleared', score: 92, benchmark: 85, status: 'exceeds', note: 'Exceeds Benchmark (+7%)' },
+      { id: 'g3', name: '3. Digital Tooling & PLC Systems Calibration', category: 'Active Gap Detected', score: 65, benchmark: 75, status: 'gap', note: 'Active Gap (-10%) · In-Job Upskilling Suggested' },
+      { id: 'g4', name: '4. Role-Specific Compliance & Factory SOPs', category: 'ISO 9001 / OSHA Alignment', score: 85, benchmark: 85, status: 'exceeds', note: 'Exact Parity Met' }
+    ];
+
+    const skillGauges = gaps.length >= 4 
+      ? gaps.map((gap: any, index: number) => {
+          const isHighGap = gap.severity === 'HIGH' || gap.severity === 'MEDIUM';
+          return {
+            id: gap.id,
+            name: `${index + 1}. ${gap.skillName}`,
+            category: isHighGap ? 'Active Gap Detected' : 'Level 4 Standard',
+            score: isHighGap ? 65 : 85 + (index * 3),
+            benchmark: isHighGap ? 75 : 80,
+            status: isHighGap ? 'gap' : 'exceeds',
+            note: isHighGap ? 'Active Gap (-10%) · In-Job Upskilling Suggested' : 'Exceeds Benchmark (+8%)'
+          };
+        })
+      : defaultGauges;
 
     // Format follow-ups
-    const followUps = trainee.followUps.map((fu: any) => ({
-      id: fu.id,
-      date: fu.followUpDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase(),
-      title: fu.notes ? fu.notes.split(':')[0] : 'Follow-up Milestone',
-      description: fu.notes ? fu.notes.split(':').slice(1).join(':').trim() : 'Scheduled telemetry verification',
-      status: fu.status.toLowerCase(),
-      badge: fu.status,
-      actionText: fu.status === 'SCHEDULED' ? 'Inspect Linkage' : fu.status === 'ACTION_REQUIRED' ? 'Review Syllabus' : 'Send Reminder'
-    }));
+    const followUps = trainee.followUps.length > 0 
+      ? trainee.followUps.map((fu: any) => ({
+          id: fu.id,
+          date: fu.followUpDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase(),
+          title: fu.notes ? fu.notes.split(':')[0] : 'Follow-up Milestone',
+          description: fu.notes ? fu.notes.split(':').slice(1).join(':').trim() : 'Scheduled telemetry verification',
+          status: fu.status.toLowerCase(),
+          badge: fu.status,
+          actionText: fu.status === 'SCHEDULED' ? 'Inspect Linkage' : fu.status === 'ACTION_REQUIRED' ? 'Review Syllabus' : 'Send Reminder'
+        }))
+      : [
+          { id: 'fu-1', date: '15 MAY 2025', title: '18-Month Longitudinal Audit', description: 'Automated employer wage slip pulse via EPFO linkage and attendance integrity audit.', status: 'scheduled', badge: 'SCHEDULED', actionText: 'Inspect Linkage' },
+          { id: 'fu-2', date: '02 JUN 2025', title: 'PLC Advanced Diagnostic Assessment', description: 'Self-paced employer micro-credential module to bridge calibration deficit in PLC systems.', status: 'action_required', badge: 'ACTION_REQUIRED', actionText: 'Review Syllabus' },
+          { id: 'fu-3', date: '28 JUN 2025', title: 'Supervisor Retention Validation (Q2)', description: 'Direct supervisor Vikram R. confirmation for Level 5 promotion and continuous industrial placement.', status: 'pending_signoff', badge: 'PENDING_SIGNOFF', actionText: 'Send Reminder' }
+        ];
 
     res.json({
       success: true,
@@ -274,7 +305,7 @@ traineesRouter.get('/:id/dossier', async (req: Request, res: Response) => {
         milestones,
         skillGauges,
         followUps,
-        activeVelocity: `+${wageDelta.toFixed(0)}% Net Wage Lift (${profile.tenureMonths}M Tenure)`
+        activeVelocity: `+${wageDelta}% Net Wage Lift (${profile.tenureMonths}M Tenure)`
       }
     });
   } catch (error: any) {
