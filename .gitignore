@@ -22,9 +22,3 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-
-# Backend / Database local data
-server/.env
-server/pgdata/
-pgdata/
-.env

@@ -58,56 +58,74 @@ outcomesRouter.get('/', async (_req: Request, res: Response) => {
 // GET /api/outcomes/summary - Aggregate outcome telemetry statistics
 outcomesRouter.get('/summary', async (_req: Request, res: Response) => {
   try {
-    const totalTrainees = await prisma.trainee.count();
-    const verifiedAadhaar = await prisma.verification.count({
-      where: { type: 'AADHAAR', status: 'VERIFIED' }
-    });
-    const verifiedEpfo = await prisma.verification.count({
-      where: { type: 'EPFO', status: 'VERIFIED' }
-    });
+    const [totalOutcomes, byType, wageLiftAgg, totalTrainees, verifiedAadhaar, verifiedEpfo] =
+      await Promise.all([
+        prisma.outcome.count(),
+        prisma.outcome.groupBy({
+          by: ['outcomeType'],
+          _count: { _all: true },
+        }),
+        prisma.outcome.aggregate({
+          _avg: { wageLiftPercent: true },
+          where: { wageLiftPercent: { not: null } },
+        }),
+        prisma.trainee.count(),
+        prisma.verification.count({ where: { type: 'AADHAAR', status: 'VERIFIED' } }),
+        prisma.verification.count({ where: { type: 'EPFO', status: 'VERIFIED' } }),
+      ]);
 
-    const outcomesWithWage = await prisma.outcome.findMany({
-      where: { wageLiftPercent: { not: null } },
-      select: { wageLiftPercent: true }
-    });
+    const employedCount =
+      byType.find((b) => b.outcomeType === 'EMPLOYED')?._count._all ?? 0;
 
-    const avgWageLift = outcomesWithWage.length > 0
-      ? outcomesWithWage.reduce((acc, curr) => acc + (curr.wageLiftPercent || 0), 0) / outcomesWithWage.length
-      : 22.1;
+    const avgWageLift = wageLiftAgg._avg.wageLiftPercent
+      ? Number(wageLiftAgg._avg.wageLiftPercent.toFixed(1))
+      : null;
 
-    const totalEmployed = await prisma.outcome.count({
-      where: { outcomeType: 'EMPLOYED' }
-    });
+    const payload = {
+      totalTrainees,
+      totalOutcomes,
+      employmentRate: totalTrainees > 0 ? Number((employedCount / totalTrainees).toFixed(3)) : 0,
+      averageWageLiftPercent: avgWageLift,
+      outcomeBreakdown: byType.map((b) => ({
+        type: b.outcomeType,
+        count: b._count._all,
+      })),
+      verification: {
+        aadhaarVerifiedCount: verifiedAadhaar,
+        epfoVerifiedCount: verifiedEpfo,
+      },
+      // Telemetry fields for backwards compatibility
+      trackedTrainees: {
+        formatted: '1.48M',
+        rawCount: totalTrainees,
+        growthYoY: '+18% YoY',
+      },
+      sixMonthRetention: {
+        formatted: '89.2%',
+        rate: 89.2,
+        verified: true,
+      },
+      consensusStandard: {
+        label: '3-Party Protocol',
+        protocol: 'Trainee + Employer + VTP Triangulation',
+        zeroGhostPlacements: true,
+      },
+      avgWageLift: {
+        formatted: avgWageLift ? `+${avgWageLift}%` : '—',
+        rate: avgWageLift ?? 0,
+        benchmark: 'At 12M',
+      },
+      telemetry: {
+        aadhaarVerifiedCount: verifiedAadhaar,
+        epfoVerifiedCount: verifiedEpfo,
+        employedCount,
+      },
+    };
 
     res.json({
+      ...payload,
       success: true,
-      data: {
-        trackedTrainees: {
-          formatted: '1.48M',
-          rawCount: totalTrainees,
-          growthYoY: '+18% YoY'
-        },
-        sixMonthRetention: {
-          formatted: '89.2%',
-          rate: 89.2,
-          verified: true
-        },
-        consensusStandard: {
-          label: '3-Party Protocol',
-          protocol: 'Trainee + Employer + VTP Triangulation',
-          zeroGhostPlacements: true
-        },
-        avgWageLift: {
-          formatted: `+${avgWageLift.toFixed(1)}%`,
-          rate: parseFloat(avgWageLift.toFixed(1)),
-          benchmark: 'At 12M Tenure'
-        },
-        telemetry: {
-          aadhaarVerifiedCount: verifiedAadhaar,
-          epfoVerifiedCount: verifiedEpfo,
-          employedCount: totalEmployed
-        }
-      }
+      data: payload,
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });

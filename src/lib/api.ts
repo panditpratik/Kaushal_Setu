@@ -61,6 +61,41 @@ export interface TraineeDossier {
   stages: DossierStage[];
 }
 
+export interface OutcomesSummary {
+  totalTrainees: number;
+  totalOutcomes: number;
+  employmentRate: number;
+  averageWageLiftPercent: number | null;
+  outcomeBreakdown: {
+    type: string;
+    count: number;
+  }[];
+  verification: {
+    aadhaarVerifiedCount: number;
+    epfoVerifiedCount: number;
+  };
+  trackedTrainees?: {
+    formatted: string;
+    rawCount: number;
+    growthYoY: string;
+  };
+  sixMonthRetention?: {
+    formatted: string;
+    rate: number;
+    verified: boolean;
+  };
+  consensusStandard?: {
+    label: string;
+    protocol: string;
+    zeroGhostPlacements: boolean;
+  };
+  avgWageLift?: {
+    formatted: string;
+    rate: number;
+    benchmark: string;
+  };
+}
+
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -100,6 +135,8 @@ async function request<T>(path: string): Promise<T> {
 export const api = {
   getTraineeDossier: (traineeId: string) =>
     request<TraineeDossier>(`/trainees/${traineeId}/dossier`),
+  getOutcomesSummary: () =>
+    request<OutcomesSummary>('/outcomes/summary'),
 };
 
 // ---------------------------------------------------------------------------
