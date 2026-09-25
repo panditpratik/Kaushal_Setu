@@ -42,6 +42,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
 });
 
 // Routes
+app.use('/api', crudEntitiesRouter);
 app.use('/api/trainees', traineesRouter);
 app.use('/api/cohorts', cohortsRouter);
 app.use('/api/outcomes', outcomesRouter);
@@ -50,7 +51,6 @@ app.use('/api/employers', employersRouter);
 app.use('/api/courses', coursesRouter);
 app.use('/api/certifications', certificationsRouter);
 app.use('/api/interventions', interventionsRouter);
-app.use('/api', crudEntitiesRouter);
 
 // 404 handler
 app.use((_req: Request, res: Response) => {
