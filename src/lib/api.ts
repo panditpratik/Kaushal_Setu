@@ -8,7 +8,103 @@ import {
   PROVIDER_BATCHES 
 } from '../data/mockData';
 
-const API_BASE = 'http://localhost:4000/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
+
+// ---------------------------------------------------------------------------
+// Longitudinal Trainee Dossier Types (Express /api/trainees/:id/dossier)
+// ---------------------------------------------------------------------------
+
+export interface DossierStage {
+  assessment: { id: string; date: string; overallScore: number };
+  skillGap: { id: string; skillName: string; severity: 'LOW' | 'MEDIUM' | 'HIGH' };
+  intervention: {
+    id: string;
+    type: string;
+    providerName: string;
+    status: 'PLANNED' | 'ACTIVE' | 'COMPLETED' | 'DROPPED';
+    startDate: string;
+    endDate: string | null;
+  };
+  outcome: {
+    id: string;
+    type: 'EMPLOYED' | 'UNEMPLOYED' | 'UPSKILLED' | 'NO_CHANGE';
+    wageLiftPercent: number | null;
+    employerName: string | null;
+    recordedAt: string;
+  };
+  insights: { text: string; confidenceScore: number }[];
+}
+
+export interface TraineeDossier {
+  trainee: {
+    id: string;
+    name: string;
+    gender: string | null;
+    aadhaarLinked: boolean;
+    epfoId: string | null;
+  };
+  verification: { aadhaar: string; epfo: string };
+  cohort: { name: string; trainingProvider: string } | null;
+  certifications: {
+    name: string;
+    course: string;
+    issuedAt: string;
+    certificateNumber: string;
+  }[];
+  activeEmployment: {
+    jobTitle: string;
+    employerName: string;
+    monthlySalary: number;
+    tenureMonths: number | null;
+  } | null;
+  trajectoryVelocity: { wageLiftPercent: number | null; tenureMonths: number | null };
+  stages: DossierStage[];
+}
+
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+    this.name = 'ApiError';
+  }
+}
+
+// In-flight request deduplication map to prevent duplicate wire requests during concurrent renders/StrictMode
+const inFlightRequests = new Map<string, Promise<unknown>>();
+
+async function request<T>(path: string): Promise<T> {
+  if (inFlightRequests.has(path)) {
+    return inFlightRequests.get(path) as Promise<T>;
+  }
+
+  const promise = (async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}${path}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new ApiError(res.status, body.error || `Request failed: ${res.status}`);
+      }
+      return await (res.json() as Promise<T>);
+    } finally {
+      setTimeout(() => {
+        inFlightRequests.delete(path);
+      }, 500);
+    }
+  })();
+
+  inFlightRequests.set(path, promise);
+  return promise;
+}
+
+export const api = {
+  getTraineeDossier: (traineeId: string) =>
+    request<TraineeDossier>(`/trainees/${traineeId}/dossier`),
+};
+
+// ---------------------------------------------------------------------------
+// Existing Dashboard & Telemetry API types & helpers
+// ---------------------------------------------------------------------------
 
 export interface TraineeDossierResponse {
   profile: TraineeProfile;
@@ -47,7 +143,7 @@ export interface OutcomesSummaryResponse {
  */
 export async function fetchTraineeDossier(id: string = 'priya'): Promise<TraineeDossierResponse> {
   try {
-    const res = await fetch(`${API_BASE}/trainees/${encodeURIComponent(id)}/dossier`);
+    const res = await fetch(`${API_BASE_URL}/trainees/${encodeURIComponent(id)}/dossier`);
     if (!res.ok) throw new Error(`HTTP error ${res.status}`);
     const json = await res.json();
     if (json.success && json.data) {
@@ -77,7 +173,7 @@ export async function fetchTraineeDossier(id: string = 'priya'): Promise<Trainee
  */
 export async function fetchOutcomesSummary(): Promise<OutcomesSummaryResponse | null> {
   try {
-    const res = await fetch(`${API_BASE}/outcomes/summary`);
+    const res = await fetch(`${API_BASE_URL}/outcomes/summary`);
     if (!res.ok) throw new Error(`HTTP error ${res.status}`);
     const json = await res.json();
     if (json.success && json.data) {
@@ -94,7 +190,7 @@ export async function fetchOutcomesSummary(): Promise<OutcomesSummaryResponse | 
  */
 export async function fetchEmployerCandidates(id: string = 'tata'): Promise<EmployerCandidate[]> {
   try {
-    const res = await fetch(`${API_BASE}/employers/${encodeURIComponent(id)}/candidates`);
+    const res = await fetch(`${API_BASE_URL}/employers/${encodeURIComponent(id)}/candidates`);
     if (!res.ok) throw new Error(`HTTP error ${res.status}`);
     const json = await res.json();
     if (json.success && Array.isArray(json.data) && json.data.length > 0) {
@@ -111,7 +207,7 @@ export async function fetchEmployerCandidates(id: string = 'tata'): Promise<Empl
  */
 export async function fetchProviderBatches(id: string = 'centurion'): Promise<ProviderBatch[]> {
   try {
-    const res = await fetch(`${API_BASE}/training-providers/${encodeURIComponent(id)}/batches`);
+    const res = await fetch(`${API_BASE_URL}/training-providers/${encodeURIComponent(id)}/batches`);
     if (!res.ok) throw new Error(`HTTP error ${res.status}`);
     const json = await res.json();
     if (json.success && Array.isArray(json.data) && json.data.length > 0) {

@@ -23,8 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 
-# Backend server
-server/node_modules/
-server/pgdata/
+# Backend / Database local data
 server/.env
-server/dist/
+server/pgdata/
+pgdata/
+.env

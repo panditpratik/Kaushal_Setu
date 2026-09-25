@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import heroPlaneSvg from '../assets/hero-plane.svg';
 import type { AppView, StakeholderRole } from '../types';
-import { fetchTraineeDossier, fetchOutcomesSummary } from '../lib/api';
+import { fetchOutcomesSummary } from '../lib/api';
+import { useTraineeDossier } from '../hooks/useTraineeDossier';
+import { TrajectoryArcCard } from './TrajectoryArcCard';
 import { 
   ArrowRight, 
   CheckCircle2, 
@@ -17,12 +18,14 @@ import {
   ArrowUpRight
 } from 'lucide-react';
 
+export const FEATURED_TRAINEE_ID = 'cmugpipt8000duyu8eus0jdzn';
+
 interface LandingPageProps {
   onNavigate: (view: AppView, role?: StakeholderRole) => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
-  const [velocityText, setVelocityText] = useState<string>("+22% Net Wage Lift (14M Tenure)");
+  const { data: featuredDossier, loading: featuredLoading, error: featuredError } = useTraineeDossier(FEATURED_TRAINEE_ID);
   const [metrics, setMetrics] = useState({
     trackedTrainees: "1.48M",
     growthYoY: "+18% YoY",
@@ -32,12 +35,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
   });
 
   useEffect(() => {
-    fetchTraineeDossier('priya').then(res => {
-      if (res && res.activeVelocity) {
-        setVelocityText(res.activeVelocity);
-      }
-    });
-
     fetchOutcomesSummary().then(res => {
       if (res) {
         setMetrics({
@@ -112,11 +109,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
               {/* Editorial Verification Row (no pills/badges) */}
               <div className="mt-9 pt-6 border-t border-[#D5CEAE] flex flex-wrap items-center gap-4 sm:gap-6 lg:gap-8 text-xs font-mono text-[#52667A] w-full">
                 <div className="flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
+                  <ShieldCheck className={`w-4 h-4 shrink-0 ${featuredDossier?.verification.aadhaar === 'VERIFIED' ? 'text-emerald-700' : 'text-[#263B52]'}`} />
                   <span className="text-[#102A43]">Aadhaar Biometric Linked</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-[#263B52] shrink-0" />
+                  <CheckCircle2 className={`w-4 h-4 shrink-0 ${featuredDossier?.verification.epfo === 'VERIFIED' ? 'text-emerald-700' : 'text-[#263B52]'}`} />
                   <span className="text-[#102A43]">EPFO Real-Time Pulse</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -129,45 +126,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
 
             {/* Right: Longitudinal Trajectory Arc card (concept preserved, polished) */}
             <div className="w-full flex justify-center lg:justify-end">
-              <div className="w-full max-w-[560px] bg-white border border-[#263B52] rounded-lg p-4 sm:p-5 shadow-xs relative">
-                
-                {/* Header Tag Strip */}
-                <div className="flex flex-wrap items-center justify-between gap-2 pb-3.5 border-b border-[#D5CEAE] mb-3.5 text-[11px] font-mono text-[#47617C]">
-                  <span className="font-bold text-[#0F253B] uppercase tracking-wider flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-[#F2C8B4] shrink-0" />
-                    <span>LONGITUDINAL TRAJECTORY ARC</span>
-                  </span>
-                  <span className="text-[#52667A] font-semibold shrink-0">TEL-NODE #4892</span>
-                </div>
-
-                {/* The SVG Plane Illustration */}
-                <div className="w-full h-auto rounded border border-[#D5CEAE] overflow-hidden bg-[#FAF7EE]">
-                  <img 
-                    src={heroPlaneSvg} 
-                    alt="KaushalSetu Trajectory Arc & Paper Plane" 
-                    className="w-full h-auto object-contain select-none" 
-                  />
-                </div>
-
-                {/* Trajectory Velocity Footer Strip */}
-                <div className="mt-3.5 p-3.5 bg-[#FAF7EE] border border-[#D5CEAE] rounded flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono">
-                  <div className="min-w-0">
-                    <span className="text-[#52667A] text-[10px] block uppercase tracking-wider">
-                      Priya's Active Velocity:
-                    </span>
-                    <span className="text-[#0F253B] font-bold block">
-                      {velocityText}
-                    </span>
-                  </div>
-                  <button 
-                    onClick={() => onNavigate('trainee-dashboard', 'trainee')}
-                    className="px-3 py-1.5 bg-[#263B52] hover:bg-[#0F253B] text-[#F4F4E7] text-[11px] font-semibold uppercase tracking-wider rounded transition-colors shrink-0 cursor-pointer self-start sm:self-auto"
-                  >
-                    View Dossier
-                  </button>
-                </div>
-
-              </div>
+              <TrajectoryArcCard 
+                traineeId={FEATURED_TRAINEE_ID}
+                data={featuredDossier}
+                loading={featuredLoading}
+                error={featuredError}
+                onViewDossier={() => onNavigate('trainee-dashboard', 'trainee')}
+              />
             </div>
 
           </div>
