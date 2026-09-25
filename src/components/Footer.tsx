@@ -1,92 +1,114 @@
 import React from 'react';
 import iconSvg from '../assets/icon.svg';
-import { Shield, FileCheck, Landmark } from 'lucide-react';
 
 export const Footer: React.FC = () => {
   return (
-    <footer className="relative w-full overflow-hidden pt-16 pb-12 border-t border-[#D5CEAE] bg-[#F7F4EB] text-[#182A3A]">
-      {/* Ambient pastel cloud blur silhouettes from Stitch */}
-      <div className="absolute inset-0 pointer-events-none -z-10 flex items-end justify-center overflow-hidden">
-        <div className="w-[550px] h-[180px] rounded-full blur-3xl bg-[#F2C8B4] opacity-25 translate-y-12 -translate-x-28"></div>
-        <div className="w-[600px] h-[200px] rounded-full blur-3xl bg-[#C8C4F2] opacity-30 translate-y-16"></div>
-        <div className="w-[500px] h-[190px] rounded-full blur-3xl bg-[#D8EEDF] opacity-25 translate-y-14 translate-x-32"></div>
-      </div>
-
-      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8">
+    <footer className="w-full border-t border-[#D5CEAE] bg-[#FAF7EE] text-[#102A43] pt-12 pb-8">
+      <div className="max-w-[1440px] mx-auto px-5 sm:px-8 md:px-10 lg:px-12 flex flex-col justify-between">
         
-        {/* Top Ledger Strip */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 pb-12 border-b border-[#D5CEAE]/60 text-xs">
+        {/* Main 4-Column Grid: Left Identity + 3 Domain Columns */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-8 lg:gap-12 pb-10 border-b border-[#D5CEAE]">
           
-          <div className="flex flex-col gap-3 md:col-span-1">
-            <div className="flex items-center gap-2">
-              <img src={iconSvg} alt="Kaushal Setu Mark" className="h-7 w-auto" />
+          {/* Left: Wordmark + Hindi line + One-line description */}
+          <div className="md:col-span-4 lg:col-span-5 flex flex-col items-start pr-0 md:pr-6">
+            <div className="flex items-center gap-3 mb-3">
+              <img src={iconSvg} alt="Kaushal Setu Mark" className="h-8 w-auto" />
               <div className="flex flex-col">
-                <span className="font-extrabold text-sm tracking-wider text-[#263B52]">KAUSHALSETU</span>
-                <span className="font-serif italic text-xs text-[#47617C]">Longitudinal Skilling Intelligence</span>
+                <span className="font-extrabold text-base tracking-wider text-[#263B52] leading-none">
+                  KAUSHALSETU
+                </span>
+                <span className="font-medium text-xs text-[#52667A] leading-none mt-1">
+                  कौशल सेतु · National Longitudinal Skilling Registry
+                </span>
               </div>
             </div>
-            <p className="text-[#52667A] leading-relaxed mt-1">
-              National vocational trajectory registry bridging skilling institutions, employers, and government outcome governance.
+            
+            <p className="text-xs text-[#52667A] leading-relaxed max-w-sm mt-1 font-sans">
+              Continuous 18-month career outcome tracking, triple-party consensus verification, and statutory curriculum feedback under NCVET standards.
             </p>
+
+            <div className="mt-4 flex items-center gap-2 text-[11px] font-mono text-[#47617C]">
+              <span className="w-2 h-2 rounded-full bg-emerald-600" />
+              <span>Sovereign Registry Node: IN-DEL-9842</span>
+            </div>
           </div>
 
-          <div className="flex flex-col gap-2">
-            <span className="font-mono font-bold text-[#263B52] uppercase tracking-wider text-[11px]">
-              Institutional Telemetry
-            </span>
-            <ul className="space-y-1.5 text-[#47617C] font-mono text-[11px]">
-              <li><span className="text-[#263B52] font-semibold">Node Code:</span> IN-DEL-9842</li>
-              <li><span className="text-[#263B52] font-semibold">Framework:</span> NCVET / NSQF L1-L8</li>
-              <li><span className="text-[#263B52] font-semibold">Protocol:</span> 3-Party Consensus (3P)</li>
-              <li><span className="text-[#263B52] font-semibold">Consensus Latency:</span> ~14ms Pulse</li>
+          {/* Column 1: Platform */}
+          <div className="md:col-span-2 lg:col-span-2 flex flex-col">
+            <h4 className="font-mono font-bold text-xs uppercase tracking-wider text-[#263B52] mb-3">
+              Platform
+            </h4>
+            <ul className="space-y-2 text-xs text-[#52667A]">
+              <li>
+                <a href="#overview" className="hover:text-[#0F253B] transition-colors">Overview</a>
+              </li>
+              <li>
+                <a href="#lifecycle" className="hover:text-[#0F253B] transition-colors">5-Stage Lifecycle</a>
+              </li>
+              <li>
+                <a href="#metrics" className="hover:text-[#0F253B] transition-colors">Outcome Benchmarks</a>
+              </li>
+              <li>
+                <a href="#anti-ghosting" className="hover:text-[#0F253B] transition-colors">Longitudinal Telemetry</a>
+              </li>
             </ul>
           </div>
 
-          <div className="flex flex-col gap-2">
-            <span className="font-mono font-bold text-[#263B52] uppercase tracking-wider text-[11px]">
-              Security & Compliance
-            </span>
-            <div className="flex flex-col gap-1.5 text-[#52667A]">
-              <div className="flex items-center gap-1.5 text-xs text-[#0F253B] font-medium">
-                <Shield className="w-3.5 h-3.5 text-emerald-700" />
-                <span>DPDP Act 2023 Compliant</span>
-              </div>
-              <p className="text-[11px] leading-normal">
-                Zero data stored on unverified endpoints. Biometric telemetry anchored to sovereign Aadhaar and EPFO pulses.
-              </p>
-            </div>
+          {/* Column 2: Verification */}
+          <div className="md:col-span-3 lg:col-span-2 flex flex-col">
+            <h4 className="font-mono font-bold text-xs uppercase tracking-wider text-[#263B52] mb-3">
+              Verification
+            </h4>
+            <ul className="space-y-2 text-xs text-[#52667A]">
+              <li>
+                <a href="#anti-ghosting" className="hover:text-[#0F253B] transition-colors">3-Party Consensus</a>
+              </li>
+              <li>
+                <span className="text-[#52667A]">EPFO Contribution Pulse</span>
+              </li>
+              <li>
+                <span className="text-[#52667A]">Aadhaar Biometric Proof</span>
+              </li>
+              <li>
+                <span className="text-[#52667A]">Anti-Ghosting Audit Logs</span>
+              </li>
+            </ul>
           </div>
 
-          <div className="flex flex-col gap-2">
-            <span className="font-mono font-bold text-[#263B52] uppercase tracking-wider text-[11px]">
-              Federated Gateways
-            </span>
-            <div className="flex flex-wrap gap-2 text-[11px] font-mono">
-              <span className="px-2 py-1 bg-white border border-[#D5CEAE] rounded flex items-center gap-1">
-                <FileCheck className="w-3 h-3 text-[#263B52]" /> DigiLocker
-              </span>
-              <span className="px-2 py-1 bg-white border border-[#D5CEAE] rounded flex items-center gap-1">
-                <Landmark className="w-3 h-3 text-[#263B52]" /> Jan Samarth
-              </span>
-              <span className="px-2 py-1 bg-white border border-[#D5CEAE] rounded flex items-center gap-1">
-                <Shield className="w-3 h-3 text-[#263B52]" /> Parichay Gov
-              </span>
-            </div>
+          {/* Column 3: Stakeholders */}
+          <div className="md:col-span-3 lg:col-span-3 flex flex-col">
+            <h4 className="font-mono font-bold text-xs uppercase tracking-wider text-[#263B52] mb-3">
+              Stakeholders
+            </h4>
+            <ul className="space-y-2 text-xs text-[#52667A]">
+              <li>
+                <a href="#stakeholders" className="hover:text-[#0F253B] transition-colors">Trainee Career Passport</a>
+              </li>
+              <li>
+                <a href="#stakeholders" className="hover:text-[#0F253B] transition-colors">Employer Workspace (LIN)</a>
+              </li>
+              <li>
+                <a href="#stakeholders" className="hover:text-[#0F253B] transition-colors">Training Partners (VTP / ITI)</a>
+              </li>
+              <li>
+                <a href="#stakeholders" className="hover:text-[#0F253B] transition-colors">State Mission Control (MSDE)</a>
+              </li>
+            </ul>
           </div>
 
         </div>
 
-        {/* Bottom Ledger Stamp */}
-        <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 font-mono text-[11px] text-[#47617C]">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
-            <span className="uppercase tracking-widest text-[#263B52] font-semibold">
-              KAUSHALSETU ARCHIVAL TELEMETRY ENGINE · REVISION 2025.04
-            </span>
+        {/* Bottom Bar: Copyright & Restrained Legal Links */}
+        <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] font-mono text-[#52667A]">
+          <div>
+            © 2026 Kaushal Setu · National Council for Vocational Education and Training (NCVET)
           </div>
-          <div className="flex items-center gap-4">
-            <span className="text-[#0F253B]">Ledger Block #4892</span>
-            <span>© 2025 KAUSHALSETU. All rights reserved.</span>
+          <div className="flex items-center gap-4 text-[#47617C]">
+            <span className="hover:text-[#0F253B] cursor-pointer">Privacy Policy</span>
+            <span>·</span>
+            <span className="hover:text-[#0F253B] cursor-pointer">Terms of Telemetry</span>
+            <span>·</span>
+            <span className="hover:text-[#0F253B] cursor-pointer">Accessibility Statement</span>
           </div>
         </div>
 
