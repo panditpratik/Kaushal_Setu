@@ -15,6 +15,8 @@ import { interventionsRouter } from './routes/interventions.js';
 import { governmentRouter } from './routes/government.js';
 import { notificationsRouter, auditLogsRouter } from './routes/notifications.js';
 import crudEntitiesRouter from './routes/crudEntities.js';
+import http from 'http';
+import { supabaseGateway, initRealtimeGateway } from './supabaseGateway.js';
 
 dotenv.config();
 
@@ -72,6 +74,7 @@ app.use('/api/employers', employersRouter);
 app.use('/api/courses', coursesRouter);
 app.use('/api/certifications', certificationsRouter);
 app.use('/api/interventions', interventionsRouter);
+app.use(supabaseGateway);
 
 // 404 handler
 app.use((_req: Request, res: Response) => {
@@ -90,10 +93,14 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   });
 });
 
-app.listen(PORT, () => {
+const server = http.createServer(app);
+initRealtimeGateway(server);
+
+server.listen(PORT, () => {
   console.log(`====================================================`);
   console.log(` KaushalSetu Core API Server running on port ${PORT}`);
   console.log(` Database connected via Prisma & PostgreSQL (5432)`);
+  console.log(` Realtime WebSocket Gateway active at /realtime/v1/websocket`);
   console.log(` CORS enabled for ${CLIENT_ORIGIN}`);
   console.log(`====================================================`);
 });

@@ -63,7 +63,7 @@ export const TrajectoryCardError: React.FC<{ error?: string | null; onRetry?: ()
     </div>
 
     <div className="mt-3.5 p-3.5 bg-[#FAF7EE] border border-[#D5CEAE] rounded flex items-center justify-between gap-3 text-xs font-mono">
-      <span className="text-[#52667A] text-[11px]">Database endpoint: /api/trainees/priya/dossier</span>
+      <span className="text-[#52667A] text-[11px]">Database endpoint: Supabase RPC (get_trainee_dossier)</span>
       <button 
         onClick={onViewDossier}
         className="px-3 py-1.5 bg-[#263B52] hover:bg-[#0F253B] text-[#F4F4E7] text-[11px] font-semibold uppercase tracking-wider rounded transition-colors shrink-0 cursor-pointer"

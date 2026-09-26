@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { EmployerCandidate } from '../types';
 import { employerService } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { 
   CheckCircle2, 
   Clock, 
@@ -15,6 +16,7 @@ interface EmployerDashboardProps {
 }
 
 export function EmployerDashboard({ onNavigateHome, onSwitchRole }: EmployerDashboardProps) {
+  const { profile: authProfile } = useAuth();
   const [candidates, setCandidates] = useState<EmployerCandidate[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState<EmployerCandidate | null>(null);
   const [loading, setLoading] = useState(true);
@@ -34,7 +36,8 @@ export function EmployerDashboard({ onNavigateHome, onSwitchRole }: EmployerDash
     setLoading(true);
     setError(null);
     try {
-      const data = await employerService.getCandidates('tata');
+      const employerId = authProfile?.employerId || 'default';
+      const data = await employerService.getCandidates(employerId);
       setCandidates(data);
       if (data.length > 0 && !selectedCandidate) {
         setSelectedCandidate(data[0]);
@@ -45,7 +48,7 @@ export function EmployerDashboard({ onNavigateHome, onSwitchRole }: EmployerDash
     } finally {
       setLoading(false);
     }
-  }, [selectedCandidate]);
+  }, [selectedCandidate, authProfile?.employerId]);
 
   useEffect(() => {
     loadCandidates();

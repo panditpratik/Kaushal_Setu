@@ -1,3 +1,4 @@
+// src/App.tsx
 import { useState, useEffect, useCallback } from 'react';
 import type { AppView, StakeholderRole } from './types';
 import { Header } from './components/Header';
@@ -8,33 +9,75 @@ import { TraineeDashboard } from './components/TraineeDashboard';
 import { EmployerDashboard } from './components/EmployerDashboard';
 import { ProviderDashboard } from './components/ProviderDashboard';
 import { GovernmentDashboard } from './components/GovernmentDashboard';
-import { authService, type AuthUser } from './lib/api';
+import { useAuth } from './context/AuthContext';
+import type { AuthUser } from './lib/api';
 
 export function App() {
+  const { user, profile, stakeholderRole, defaultView, signOut } = useAuth();
   const [currentView, setCurrentView] = useState<AppView>('landing');
   const [currentRole, setCurrentRole] = useState<StakeholderRole | null>(null);
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
 
-  // Restore authenticated session on mount (Phase 19: GET /api/auth/me)
+  // Sync state when Supabase user profile loads or changes
   useEffect(() => {
-    authService.getMe().then((user) => {
-      if (user) {
-        setCurrentUser(user);
-        const roleMap: Record<string, { role: StakeholderRole; view: AppView }> = {
-          TRAINEE: { role: 'trainee', view: 'trainee-dashboard' },
-          EMPLOYER: { role: 'employer', view: 'employer-dashboard' },
-          TRAINING_PROVIDER: { role: 'provider', view: 'provider-dashboard' },
-          GOVERNMENT: { role: 'government', view: 'government-dashboard' },
-        };
-        const mapped = roleMap[user.role];
-        if (mapped) {
-          setCurrentRole(mapped.role);
-        }
+    if (profile && stakeholderRole) {
+      setCurrentRole(stakeholderRole);
+      // Auto-navigate to user's dashboard if currently on login or landing
+      if (currentView === 'login' || currentView === 'landing') {
+        setCurrentView(defaultView);
       }
-    });
-  }, []);
+    } else if (!user) {
+      setCurrentRole(null);
+    }
+  }, [profile, stakeholderRole, defaultView, user]);
+
+  const currentUser: AuthUser | null = profile
+    ? {
+        id: profile.id,
+        name: profile.name,
+        email: profile.email,
+        role: profile.role,
+        traineeId: profile.traineeId,
+        employerId: profile.employerId,
+        providerId: profile.providerId,
+        govId: profile.govId,
+      }
+    : null;
 
   const handleNavigate = (view: AppView, role?: StakeholderRole) => {
+    // Route Protection: Unauthenticated access to dashboard views redirects to login
+    const isProtectedDashboard = [
+      'trainee-dashboard',
+      'employer-dashboard',
+      'provider-dashboard',
+      'government-dashboard',
+    ].includes(view);
+
+    if (isProtectedDashboard && !user) {
+      setCurrentView('login');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    // Role check for UX navigation
+    if (user && profile) {
+      if (view === 'trainee-dashboard' && profile.role !== 'TRAINEE') {
+        alert('Access Restricted: You are authenticated as ' + profile.role + ', not TRAINEE.');
+        return;
+      }
+      if (view === 'employer-dashboard' && profile.role !== 'EMPLOYER') {
+        alert('Access Restricted: You are authenticated as ' + profile.role + ', not EMPLOYER.');
+        return;
+      }
+      if (view === 'provider-dashboard' && profile.role !== 'TRAINING_PROVIDER') {
+        alert('Access Restricted: You are authenticated as ' + profile.role + ', not TRAINING_PROVIDER.');
+        return;
+      }
+      if (view === 'government-dashboard' && profile.role !== 'GOVERNMENT') {
+        alert('Access Restricted: You are authenticated as ' + profile.role + ', not GOVERNMENT.');
+        return;
+      }
+    }
+
     setCurrentView(view);
     if (role) {
       setCurrentRole(role);
@@ -55,17 +98,15 @@ export function App() {
   const handleLogin = (role: StakeholderRole, targetView: AppView) => {
     setCurrentRole(role);
     setCurrentView(targetView);
-    authService.getMe().then((u) => setCurrentUser(u));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleLogout = useCallback(async () => {
-    await authService.logout();
-    setCurrentUser(null);
+    await signOut();
     setCurrentRole(null);
     setCurrentView('landing');
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
+  }, [signOut]);
 
   const handleSwitchRole = (roleStr: string) => {
     const role = roleStr as StakeholderRole;
@@ -79,46 +120,46 @@ export function App() {
 
   return (
     <div className="min-h-screen bg-[#F4F4E7] text-[#0F253B] font-sans flex flex-col selection:bg-[#263B52] selection:text-white">
-      {currentView === 'login' ? (
-        <LoginPage 
-          onLogin={handleLogin} 
-          onNavigateHome={() => handleNavigate('landing')} 
+      {currentView !== 'login' && (
+        <Header 
+          currentView={currentView} 
+          currentRole={currentRole} 
+          currentUser={currentUser}
+          onNavigate={handleNavigate} 
+          onLogout={handleLogout}
         />
-      ) : currentView === 'trainee-dashboard' ? (
-        <TraineeDashboard 
-          onNavigateHome={() => handleNavigate('landing')} 
-          onSwitchRole={handleSwitchRole} 
-        />
-      ) : currentView === 'employer-dashboard' ? (
-        <EmployerDashboard 
-          onNavigateHome={() => handleNavigate('landing')} 
-          onSwitchRole={handleSwitchRole} 
-        />
-      ) : currentView === 'provider-dashboard' ? (
-        <ProviderDashboard 
-          onNavigateHome={() => handleNavigate('landing')} 
-          onSwitchRole={handleSwitchRole} 
-        />
-      ) : currentView === 'government-dashboard' ? (
-        <GovernmentDashboard 
-          onNavigateHome={() => handleNavigate('landing')} 
-          onSwitchRole={handleSwitchRole} 
-        />
-      ) : (
-        <>
-          <Header 
-            currentView={currentView} 
-            currentRole={currentRole} 
-            currentUser={currentUser}
-            onNavigate={handleNavigate} 
-            onLogout={handleLogout}
-          />
-          <main className="flex-1">
-            <LandingPage onNavigate={handleNavigate} />
-          </main>
-          <Footer />
-        </>
       )}
+      <main className="flex-1">
+        {currentView === 'login' ? (
+          <LoginPage 
+            onLogin={handleLogin} 
+            onNavigateHome={() => handleNavigate('landing')} 
+          />
+        ) : currentView === 'trainee-dashboard' ? (
+          <TraineeDashboard 
+            onNavigateHome={() => handleNavigate('landing')} 
+            onSwitchRole={handleSwitchRole} 
+          />
+        ) : currentView === 'employer-dashboard' ? (
+          <EmployerDashboard 
+            onNavigateHome={() => handleNavigate('landing')} 
+            onSwitchRole={handleSwitchRole} 
+          />
+        ) : currentView === 'provider-dashboard' ? (
+          <ProviderDashboard 
+            onNavigateHome={() => handleNavigate('landing')} 
+            onSwitchRole={handleSwitchRole} 
+          />
+        ) : currentView === 'government-dashboard' ? (
+          <GovernmentDashboard 
+            onNavigateHome={() => handleNavigate('landing')} 
+            onSwitchRole={handleSwitchRole} 
+          />
+        ) : (
+          <LandingPage onNavigate={handleNavigate} />
+        )}
+      </main>
+      <Footer />
     </div>
   );
 }

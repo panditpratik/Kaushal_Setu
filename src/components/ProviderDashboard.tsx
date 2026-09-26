@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { ProviderBatch } from '../types';
 import { providerService } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { 
   Sparkles, 
   CheckCircle2, 
@@ -15,6 +16,7 @@ interface ProviderDashboardProps {
 }
 
 export function ProviderDashboard({ onNavigateHome, onSwitchRole }: ProviderDashboardProps) {
+  const { profile: authProfile } = useAuth();
   const [batches, setBatches] = useState<ProviderBatch[]>([]);
   const [selectedBatch, setSelectedBatch] = useState<ProviderBatch | null>(null);
   const [moduleDeployed, setModuleDeployed] = useState(false);
@@ -26,7 +28,8 @@ export function ProviderDashboard({ onNavigateHome, onSwitchRole }: ProviderDash
     setLoading(true);
     setError(null);
     try {
-      const data = await providerService.getBatches('centurion');
+      const providerId = authProfile?.providerId || 'default';
+      const data = await providerService.getBatches(providerId);
       setBatches(data);
       if (data.length > 0) {
         setSelectedBatch(data[0]);
@@ -37,7 +40,7 @@ export function ProviderDashboard({ onNavigateHome, onSwitchRole }: ProviderDash
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [authProfile?.providerId]);
 
   useEffect(() => {
     loadBatches();
@@ -46,7 +49,8 @@ export function ProviderDashboard({ onNavigateHome, onSwitchRole }: ProviderDash
   const handleDeployModule = async () => {
     if (!selectedBatch) return;
     try {
-      await providerService.deployModule('centurion', {
+      const providerId = authProfile?.providerId || 'default';
+      await providerService.deployModule(providerId, {
         moduleName: 'PLC Troubleshooting & Industrial Calibration (18h)',
         batchId: selectedBatch.id,
         cohortName: selectedBatch.name,

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { StakeholderRole, AppView } from '../types';
-import { authService } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { 
   ShieldCheck, 
   KeyRound, 
@@ -21,6 +21,7 @@ interface LoginPageProps {
 }
 
 export function LoginPage({ onLogin, onNavigateHome }: LoginPageProps) {
+  const { signIn } = useAuth();
   const [selectedRole, setSelectedRole] = useState<StakeholderRole>('trainee');
   const [emailInput, setEmailInput] = useState('trainee@kaushalsetu.gov.in');
   const [passwordInput, setPasswordInput] = useState('Password@123');
@@ -96,7 +97,7 @@ export function LoginPage({ onLogin, onNavigateHome }: LoginPageProps) {
     setErrorMessage(null);
 
     try {
-      const data = await authService.login(emailInput, passwordInput);
+      const { profile } = await signIn(emailInput, passwordInput);
       const roleTarget: Record<string, { role: StakeholderRole; view: AppView }> = {
         TRAINEE: { role: 'trainee', view: 'trainee-dashboard' },
         EMPLOYER: { role: 'employer', view: 'employer-dashboard' },
@@ -104,7 +105,7 @@ export function LoginPage({ onLogin, onNavigateHome }: LoginPageProps) {
         GOVERNMENT: { role: 'government', view: 'government-dashboard' },
       };
 
-      const mapped = roleTarget[data.user.role] || { role: selectedRole, view: currentConfig.targetView };
+      const mapped = roleTarget[profile.role] || { role: selectedRole, view: currentConfig.targetView };
       onLogin(mapped.role, mapped.view);
     } catch (err: any) {
       console.error('Login error:', err);
@@ -121,14 +122,14 @@ export function LoginPage({ onLogin, onNavigateHome }: LoginPageProps) {
     const email = cfg ? cfg.defaultEmail : 'trainee@kaushalsetu.gov.in';
 
     try {
-      const data = await authService.login(email, 'Password@123');
+      const { profile } = await signIn(email, 'Password@123');
       const roleTarget: Record<string, { role: StakeholderRole; view: AppView }> = {
         TRAINEE: { role: 'trainee', view: 'trainee-dashboard' },
         EMPLOYER: { role: 'employer', view: 'employer-dashboard' },
         TRAINING_PROVIDER: { role: 'provider', view: 'provider-dashboard' },
         GOVERNMENT: { role: 'government', view: 'government-dashboard' },
       };
-      const mapped = roleTarget[data.user.role] || { role, view: targetView };
+      const mapped = roleTarget[profile.role] || { role, view: targetView };
       onLogin(mapped.role, mapped.view);
     } catch (err: any) {
       setErrorMessage(`Authentication failed: ${err.message}`);

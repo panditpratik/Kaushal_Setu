@@ -1,7 +1,9 @@
 // src/lib/api.ts - Centralized Type-safe API Client for KaushalSetu
-// Direct connection to PostgreSQL Express API - NO MOCK DATA FALLBACKS
+// Migrated to Supabase Auth, PostgreSQL RPC functions, and Edge Functions.
+// STRICT RULE: ABSOLUTELY NO MOCK DATA FALLBACKS.
+// If Supabase returns an error, a typed ApiError is raised for explicit UI handling.
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
+import { supabase } from './supabase';
 
 export class ApiError extends Error {
   status: number;
@@ -11,54 +13,6 @@ export class ApiError extends Error {
     this.status = status;
     this.code = code;
     this.name = 'ApiError';
-  }
-}
-
-// Token management in localStorage
-export function getAuthToken(): string | null {
-  return localStorage.getItem('kaushalsetu_token');
-}
-
-export function setAuthToken(token: string | null) {
-  if (token) {
-    localStorage.setItem('kaushalsetu_token', token);
-  } else {
-    localStorage.removeItem('kaushalsetu_token');
-  }
-}
-
-// Centralized fetch with authentication header and error extraction
-export async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const token = getAuthToken();
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(options.headers as Record<string, string>),
-  };
-
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
-
-  try {
-    const res = await fetch(url, {
-      ...options,
-      headers,
-    });
-
-    const data = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      const errorMessage = data?.error?.message || data?.error || data?.message || `Request failed with status ${res.status}`;
-      const errorCode = data?.error?.code || 'API_ERROR';
-      throw new ApiError(res.status, errorMessage, errorCode);
-    }
-
-    return data;
-  } catch (err: any) {
-    if (err instanceof ApiError) throw err;
-    throw new ApiError(0, err.message || 'Unable to connect to KaushalSetu services. Please check your connection.', 'NETWORK_ERROR');
   }
 }
 
@@ -204,139 +158,409 @@ export interface AuthUser {
   govId?: string;
 }
 
+export interface NotificationItem {
+  id: string;
+  user_id: string;
+  title: string;
+  message: string;
+  read: boolean;
+  created_at: string;
+}
+
 // ---------------------------------------------------------------------------
-// Service Modules
+// Helper: Error extraction from Supabase responses
+// ---------------------------------------------------------------------------
+function handleSupabaseError(error: any, fallbackMessage: string): never {
+  const status = error?.status || (error?.code === 'PGRST116' ? 404 : 500);
+  const message = error?.message || error?.details || fallbackMessage;
+  const code = error?.code || 'SUPABASE_ERROR';
+  throw new ApiError(status, message, code);
+}
+
+// ---------------------------------------------------------------------------
+// Service Modules: Supabase Auth, RPC, and Edge Functions
 // ---------------------------------------------------------------------------
 
 export const authService = {
   login: async (email: string, password: string): Promise<{ token: string; user: AuthUser }> => {
-    const res = await apiRequest<{ success: boolean; data: { token: string; user: AuthUser } }>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    });
-    setAuthToken(res.data.token);
-    return res.data;
-  },
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error || !data.user || !data.session) {
+      throw new ApiError(401, error?.message || 'Invalid email or password', 'AUTH_FAILED');
+    }
 
-  register: async (payload: { name: string; email: string; password: string; role: string; [key: string]: any }) => {
-    const res = await apiRequest<{ success: boolean; data: { token: string; user: AuthUser } }>('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-    setAuthToken(res.data.token);
-    return res.data;
+    // Resolve profile
+    const { data: profile, error: profileErr } = await supabase
+      .from('profiles')
+      .select('id, name, email, role')
+      .eq('id', data.user.id)
+      .single();
+
+    if (profileErr || !profile) {
+      throw new ApiError(403, 'User profile not found in system database', 'NO_PROFILE');
+    }
+
+    const authUser: AuthUser = {
+      id: profile.id,
+      name: profile.name,
+      email: profile.email,
+      role: profile.role,
+    };
+
+    if (profile.role === 'TRAINEE') {
+      const { data: tr } = await supabase.from('trainees').select('id').eq('user_id', profile.id).maybeSingle();
+      if (tr) authUser.traineeId = tr.id;
+    } else if (profile.role === 'EMPLOYER') {
+      const { data: emp } = await supabase.from('employers').select('id').eq('user_id', profile.id).maybeSingle();
+      if (emp) authUser.employerId = emp.id;
+    } else if (profile.role === 'TRAINING_PROVIDER') {
+      const { data: tp } = await supabase.from('training_providers').select('id').eq('user_id', profile.id).maybeSingle();
+      if (tp) authUser.providerId = tp.id;
+    }
+
+    return { token: data.session.access_token, user: authUser };
   },
 
   getMe: async (): Promise<AuthUser | null> => {
     try {
-      const res = await apiRequest<{ success: boolean; data: { user: AuthUser } }>('/auth/me');
-      return res.data.user;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('id, name, email, role')
+        .eq('id', user.id)
+        .single();
+
+      if (error || !profile) return null;
+
+      const authUser: AuthUser = {
+        id: profile.id,
+        name: profile.name,
+        email: profile.email,
+        role: profile.role,
+      };
+
+      if (profile.role === 'TRAINEE') {
+        const { data: tr } = await supabase.from('trainees').select('id').eq('user_id', profile.id).maybeSingle();
+        if (tr) authUser.traineeId = tr.id;
+      } else if (profile.role === 'EMPLOYER') {
+        const { data: emp } = await supabase.from('employers').select('id').eq('user_id', profile.id).maybeSingle();
+        if (emp) authUser.employerId = emp.id;
+      } else if (profile.role === 'TRAINING_PROVIDER') {
+        const { data: tp } = await supabase.from('training_providers').select('id').eq('user_id', profile.id).maybeSingle();
+        if (tp) authUser.providerId = tp.id;
+      }
+
+      return authUser;
     } catch {
-      setAuthToken(null);
       return null;
     }
   },
 
-  logout: async () => {
-    try {
-      await apiRequest('/auth/logout', { method: 'POST' });
-    } finally {
-      setAuthToken(null);
-    }
+  logout: async (): Promise<void> => {
+    await supabase.auth.signOut();
   },
 };
 
 export const traineeService = {
-  getDossier: async (id: string = 'priya'): Promise<TraineeDossier> => {
-    return await apiRequest<TraineeDossier>(`/trainees/${encodeURIComponent(id)}/dossier`);
+  // Read operation via PostgreSQL RPC function: get_trainee_dossier
+  getDossier: async (id?: string): Promise<TraineeDossier> => {
+    const targetId = id || 'me';
+    const { data, error } = await supabase.rpc('get_trainee_dossier', { p_id: targetId });
+
+    if (error) {
+      handleSupabaseError(error, `Failed to load trainee dossier for identifier: ${targetId}`);
+    }
+
+    if (!data || data.success === false) {
+      throw new ApiError(404, data?.error || 'Trainee dossier not found in database', 'NOT_FOUND');
+    }
+
+    return data as TraineeDossier;
   },
 
-  updateOutcome: async (id: string, payload: { outcomeType: string; monthlySalary: number; jobTitle?: string; employerName?: string; wageLiftPercent?: number; notes?: string }) => {
-    return await apiRequest<{ success: boolean; data: any }>(`/trainees/${encodeURIComponent(id)}/outcome`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
+  // Write operation via Supabase Edge Function: record-outcome
+  updateOutcome: async (
+    id: string,
+    payload: {
+      outcomeType: string;
+      monthlySalary: number;
+      jobTitle?: string;
+      employerName?: string;
+      wageLiftPercent?: number;
+      notes?: string;
+    }
+  ) => {
+    const { data, error } = await supabase.functions.invoke('record-outcome', {
+      body: { candidateId: id, ...payload },
     });
+
+    if (error) {
+      handleSupabaseError(error, 'Failed to record outcome via Edge Function');
+    }
+
+    return { success: true, data };
+  },
+
+  // Write operation via Supabase Edge Function: submit-follow-up
+  submitFollowUp: async (
+    id: string,
+    payload: { followUpId?: string; status?: string; notes?: string }
+  ) => {
+    const { data, error } = await supabase.functions.invoke('submit-follow-up', {
+      body: { candidateId: id, ...payload },
+    });
+
+    if (error) {
+      handleSupabaseError(error, 'Failed to submit follow-up via Edge Function');
+    }
+
+    return { success: true, data };
   },
 
   requestAssessment: async (id: string, payload: { skillCategory?: string; notes?: string }) => {
-    return await apiRequest<{ success: boolean; data: any }>(`/trainees/${encodeURIComponent(id)}/assessment-request`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
+    // Uses submit-follow-up edge function with status Assessment Requested
+    const { data, error } = await supabase.functions.invoke('submit-follow-up', {
+      body: { candidateId: id, status: 'Assessment Requested', notes: payload.notes || payload.skillCategory },
     });
-  },
 
-  submitFollowUp: async (id: string, payload: { followUpId?: string; status?: string; notes?: string }) => {
-    return await apiRequest<{ success: boolean; data: any }>(`/trainees/${encodeURIComponent(id)}/follow-up`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
+    if (error) {
+      handleSupabaseError(error, 'Failed to submit assessment request');
+    }
+
+    return { success: true, data };
   },
 };
 
 export const employerService = {
-  getCandidates: async (id: string = 'tata'): Promise<EmployerCandidate[]> => {
-    const res = await apiRequest<{ success: boolean; data: EmployerCandidate[] }>(`/employers/${encodeURIComponent(id)}/candidates`);
-    return res.data || [];
+  // Read operation via PostgreSQL RPC function: get_employer_candidates
+  getCandidates: async (id?: string): Promise<EmployerCandidate[]> => {
+    const employerParam = id || 'default';
+    const { data, error } = await supabase.rpc('get_employer_candidates', {
+      p_employer_id: employerParam,
+    });
+
+    if (error) {
+      handleSupabaseError(error, 'Failed to load employer candidates from database');
+    }
+
+    if (Array.isArray(data)) return data as EmployerCandidate[];
+    if (data && Array.isArray((data as any).data)) return (data as any).data as EmployerCandidate[];
+    return [];
   },
 
+  // Write operation via Supabase Edge Function: verify-retention
   verifyRetention: async (candidateId: string, milestone: '3m' | '6m' | '12m') => {
-    const res = await apiRequest<{ success: boolean; data: any }>(`/employers/candidates/${encodeURIComponent(candidateId)}/verify-retention`, {
-      method: 'PATCH',
-      body: JSON.stringify({ milestone, status: 'verified' }),
+    const { data, error } = await supabase.functions.invoke('verify-retention', {
+      body: { candidateId, milestone, status: 'verified' },
     });
-    return res.data;
+
+    if (error) {
+      handleSupabaseError(error, `Failed to verify ${milestone} retention milestone`);
+    }
+
+    return data;
   },
 
-  submitFeedback: async (payload: { candidateId: string; deficiencyCategory: string; severity: string; notes: string; employerId?: string }) => {
-    const res = await apiRequest<{ success: boolean; message: string; data: any }>('/employers/feedback', {
-      method: 'POST',
-      body: JSON.stringify(payload),
+  // Write operation via Supabase Edge Function: submit-feedback
+  submitFeedback: async (payload: {
+    candidateId: string;
+    deficiencyCategory: string;
+    severity: string;
+    notes: string;
+    employerId?: string;
+  }) => {
+    const { data, error } = await supabase.functions.invoke('submit-feedback', {
+      body: payload,
     });
-    return res;
+
+    if (error) {
+      handleSupabaseError(error, 'Failed to submit employer feedback');
+    }
+
+    return { success: true, message: 'Feedback recorded successfully', data };
   },
 };
 
 export const providerService = {
-  getBatches: async (id: string = 'centurion'): Promise<ProviderBatch[]> => {
-    const res = await apiRequest<{ success: boolean; data: ProviderBatch[] }>(`/training-providers/${encodeURIComponent(id)}/batches`);
-    return res.data || [];
+  // Read operation via PostgreSQL RPC function: get_provider_batches
+  getBatches: async (id?: string): Promise<ProviderBatch[]> => {
+    const providerParam = id || 'default';
+    const { data, error } = await supabase.rpc('get_provider_batches', {
+      p_provider_id: providerParam,
+    });
+
+    if (error) {
+      handleSupabaseError(error, 'Failed to load provider batches from database');
+    }
+
+    if (Array.isArray(data)) return data as ProviderBatch[];
+    if (data && Array.isArray((data as any).data)) return (data as any).data as ProviderBatch[];
+    return [];
   },
 
-  deployModule: async (providerId: string = 'centurion', payload: { moduleName: string; batchId?: string; cohortName?: string }) => {
-    const res = await apiRequest<{ success: boolean; message: string; data: any }>(`/training-providers/${encodeURIComponent(providerId)}/deploy-module`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
+  // Write operation via Supabase Edge Function: deploy-intervention
+  deployModule: async (
+    providerId: string = 'centurion',
+    payload: { moduleName: string; batchId?: string; cohortName?: string }
+  ) => {
+    const { data, error } = await supabase.functions.invoke('deploy-intervention', {
+      body: { providerId, ...payload },
     });
-    return res;
+
+    if (error) {
+      handleSupabaseError(error, 'Failed to deploy intervention module via Edge Function');
+    }
+
+    return { success: true, message: 'Module deployed successfully', data };
   },
 };
 
 export const governmentService = {
-  getAnalytics: async (filters: { district?: string; programme?: string; provider?: string; outcome?: string } = {}): Promise<{ meta: any; data: DistrictMetric[] }> => {
-    const query = new URLSearchParams();
-    if (filters.district && filters.district !== 'All') query.set('district', filters.district);
-    if (filters.programme && filters.programme !== 'All') query.set('programme', filters.programme);
-    if (filters.provider && filters.provider !== 'All') query.set('provider', filters.provider);
-    if (filters.outcome && filters.outcome !== 'All') query.set('outcome', filters.outcome);
+  // Read operation via PostgreSQL RPC function: get_government_analytics
+  getAnalytics: async (
+    filters: { district?: string; programme?: string; provider?: string; outcome?: string } = {}
+  ): Promise<{ meta: any; data: DistrictMetric[] }> => {
+    const district = !filters.district || filters.district === 'All' ? null : filters.district;
+    const programme = !filters.programme || filters.programme === 'All' ? null : filters.programme;
+    const provider = !filters.provider || filters.provider === 'All' ? null : filters.provider;
+    const outcome = !filters.outcome || filters.outcome === 'All' ? null : filters.outcome;
 
-    const queryString = query.toString() ? `?${query.toString()}` : '';
-    const res = await apiRequest<{ success: boolean; meta: any; data: DistrictMetric[] }>(`/government/analytics${queryString}`);
-    return { meta: res.meta, data: res.data || [] };
+    const { data, error } = await supabase.rpc('get_government_analytics', {
+      p_district: district,
+      p_programme: programme,
+      p_provider: provider,
+      p_outcome: outcome,
+    });
+
+    if (error) {
+      handleSupabaseError(error, 'Failed to load government analytics');
+    }
+
+    const payload = data as { meta: any; data: DistrictMetric[] };
+    return { meta: payload?.meta || {}, data: payload?.data || [] };
   },
 
-  recordAction: async (payload: { actionType: string; district?: string; amount?: string; notes?: string }) => {
-    const res = await apiRequest<{ success: boolean; message: string; data: any }>('/government/actions', {
-      method: 'POST',
-      body: JSON.stringify(payload),
+  // Transactional action via PostgreSQL RPC function: record_programme_action
+  recordAction: async (payload: {
+    actionType: string;
+    district?: string;
+    amount?: string | number;
+    notes?: string;
+  }) => {
+    const numAmount = payload.amount ? parseFloat(String(payload.amount).replace(/[^0-9.]/g, '')) : null;
+    const { data, error } = await supabase.rpc('record_programme_action', {
+      p_action_type: payload.actionType,
+      p_district: payload.district || null,
+      p_amount: numAmount || null,
+      p_notes: payload.notes || null,
     });
-    return res;
+
+    if (error) {
+      handleSupabaseError(error, 'Failed to execute government programme action');
+    }
+
+    return { success: true, message: 'Programme action recorded to audit ledger', data };
   },
 };
 
 export const outcomesService = {
+  // Read operation via PostgreSQL RPC function: get_outcomes_summary
   getSummary: async (): Promise<OutcomesSummary> => {
-    const res = await apiRequest<any>('/outcomes/summary');
-    return res.data || res;
+    const { data, error } = await supabase.rpc('get_outcomes_summary');
+
+    if (error) {
+      handleSupabaseError(error, 'Failed to load sovereign outcomes summary');
+    }
+
+    return data as OutcomesSummary;
+  },
+};
+
+export const notificationService = {
+  // Read notifications directly from public.notifications with RLS
+  getNotifications: async (): Promise<NotificationItem[]> => {
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('id, user_id, title, message, read, created_at')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      handleSupabaseError(error, 'Failed to retrieve notifications');
+    }
+
+    return (data as NotificationItem[]) || [];
+  },
+
+  // Mark notification read
+  markAsRead: async (id: string): Promise<void> => {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('id', id);
+
+    if (error) {
+      handleSupabaseError(error, 'Failed to update notification state');
+    }
+  },
+
+  // Supabase Realtime subscription strictly scoped to authenticated user
+  subscribeToUserNotifications: (
+    userId: string,
+    onNotification: (notification: NotificationItem) => void,
+    onError?: (err: any) => void
+  ): (() => void) => {
+    if (!userId) {
+      return () => {};
+    }
+
+    const channelName = `user-notifications-${userId}`;
+
+    // Clean up existing channel for this user if already active to prevent duplicates
+    const existing = (supabase as any)._activeNotificationChannels?.get?.(userId);
+    if (existing) {
+      supabase.removeChannel(existing);
+      (supabase as any)._activeNotificationChannels.delete(userId);
+    }
+
+    if (!(supabase as any)._activeNotificationChannels) {
+      (supabase as any)._activeNotificationChannels = new Map<string, any>();
+    }
+
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          if (payload.new && (payload.new as any).id) {
+            onNotification(payload.new as NotificationItem);
+          }
+        }
+      )
+      .subscribe((status, err) => {
+        if (status === 'SUBSCRIBED') {
+          // Connected successfully
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          if (err && onError) {
+            onError(err);
+          }
+        }
+      });
+
+    (supabase as any)._activeNotificationChannels.set(userId, channel);
+
+    return () => {
+      if ((supabase as any)._activeNotificationChannels?.get(userId) === channel) {
+        (supabase as any)._activeNotificationChannels.delete(userId);
+      }
+      supabase.removeChannel(channel);
+    };
   },
 };
 
@@ -346,7 +570,7 @@ export const api = {
   getOutcomesSummary: outcomesService.getSummary,
 };
 
-export async function fetchTraineeDossier(id: string = 'priya') {
+export async function fetchTraineeDossier(id?: string) {
   return await traineeService.getDossier(id);
 }
 
@@ -354,10 +578,10 @@ export async function fetchOutcomesSummary() {
   return await outcomesService.getSummary();
 }
 
-export async function fetchEmployerCandidates(id: string = 'tata') {
+export async function fetchEmployerCandidates(id?: string) {
   return await employerService.getCandidates(id);
 }
 
-export async function fetchProviderBatches(id: string = 'centurion') {
+export async function fetchProviderBatches(id?: string) {
   return await providerService.getBatches(id);
 }

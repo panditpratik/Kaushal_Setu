@@ -1,9 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import type { AppView, StakeholderRole } from '../types';
 import logoSvg from '../assets/logo.svg';
 import iconSvg from '../assets/icon.svg';
-import { ArrowRight, Activity, LogOut, ChevronDown } from 'lucide-react';
-
+import { ArrowRight, Activity, LogOut, ChevronDown, Bell, Check } from 'lucide-react';
+import { notificationService, type NotificationItem } from '../lib/api';
 import type { AuthUser } from '../lib/api';
 
 interface HeaderProps {
@@ -15,7 +15,55 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ currentView, currentRole, currentUser, onNavigate, onLogout }) => {
-  const [dropdownOpen, setDropdownOpen] = React.useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+
+  useEffect(() => {
+    if (!currentUser?.id) {
+      setNotifications([]);
+      return;
+    }
+
+    // 1. Initial fetch of notifications
+    notificationService.getNotifications()
+      .then(setNotifications)
+      .catch(() => setNotifications([]));
+
+    // 2. Realtime subscription strictly scoped to authenticated user_id
+    const unsubscribe = notificationService.subscribeToUserNotifications(
+      currentUser.id,
+      (newNotification) => {
+        // Prevent duplicate events
+        setNotifications((prev) => {
+          if (prev.some((n) => n.id === newNotification.id)) {
+            return prev;
+          }
+          return [newNotification, ...prev];
+        });
+      },
+      (err) => {
+        console.warn('Realtime subscription notice:', err);
+      }
+    );
+
+    // 3. Cleanup on unmount or user change/logout
+    return () => {
+      unsubscribe();
+    };
+  }, [currentUser?.id]);
+
+  const handleMarkAsRead = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await notificationService.markAsRead(id);
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    } catch (err) {
+      console.error('Failed to mark notification as read:', err);
+    }
+  };
+
+  const unreadCount = notifications.filter(n => !n.read).length;
   const isDashboard = currentView.endsWith('-dashboard');
 
   return (
@@ -155,6 +203,60 @@ export const Header: React.FC<HeaderProps> = ({ currentView, currentRole, curren
               </div>
             )}
           </div>
+
+          {/* Real Supabase Database Notifications */}
+          {currentUser && (
+            <div className="relative">
+              <button
+                onClick={() => setNotifOpen(!notifOpen)}
+                className="relative p-1.5 sm:p-2 text-[#263B52] hover:bg-[#EDE8D5] rounded-full transition-colors cursor-pointer"
+                aria-label="View notifications"
+              >
+                <Bell className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
+                {unreadCount > 0 && (
+                  <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-600 rounded-full border-2 border-white animate-pulse" />
+                )}
+              </button>
+
+              {notifOpen && (
+                <div className="absolute right-0 mt-2 w-72 sm:w-80 bg-white border border-[#263B52] shadow-xl rounded-lg z-50 py-2 font-sans text-xs animate-in fade-in duration-150">
+                  <div className="px-3.5 py-1.5 border-b border-[#D5CEAE] flex items-center justify-between">
+                    <span className="font-bold text-[#0F253B]">Database Notifications</span>
+                    <span className="text-[10px] font-mono text-[#52667A]">{unreadCount} unread</span>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto divide-y divide-gray-100">
+                    {notifications.length === 0 ? (
+                      <div className="p-4 text-center text-[#52667A]">No notifications in database</div>
+                    ) : (
+                      notifications.map(n => (
+                        <div
+                          key={n.id}
+                          className={`p-3 transition-colors ${n.read ? 'bg-white opacity-70' : 'bg-[#FAF7EE]'}`}
+                        >
+                          <div className="flex items-start justify-between gap-1">
+                            <span className="font-semibold text-[#0F253B]">{n.title}</span>
+                            {!n.read && (
+                              <button
+                                onClick={(e) => handleMarkAsRead(n.id, e)}
+                                className="text-[10px] text-blue-700 hover:underline flex items-center gap-0.5 shrink-0"
+                                title="Mark as read"
+                              >
+                                <Check className="w-3 h-3" /> Read
+                              </button>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-[#52667A] mt-1 leading-snug">{n.message}</p>
+                          <span className="text-[9px] font-mono text-[#8B9DAF] mt-1 block">
+                            {new Date(n.created_at).toLocaleDateString()} {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* User Session & Primary Action */}
           {currentUser ? (

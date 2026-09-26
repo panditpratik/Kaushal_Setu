@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { TraineeProfile, TrajectoryMilestone, SkillGauge, FollowUpItem } from '../types';
 import { traineeService, type TraineeDossier } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { OutcomeVerificationModal } from './OutcomeVerificationModal';
 import { 
   ShieldCheck, 
@@ -18,6 +19,7 @@ interface TraineeDashboardProps {
 }
 
 export function TraineeDashboard({ onNavigateHome, onSwitchRole }: TraineeDashboardProps) {
+  const { profile: authProfile } = useAuth();
   const [, setDossier] = useState<TraineeDossier | null>(null);
   const [profile, setProfile] = useState<TraineeProfile | null>(null);
   const [milestones, setMilestones] = useState<TrajectoryMilestone[]>([]);
@@ -34,7 +36,8 @@ export function TraineeDashboard({ onNavigateHome, onSwitchRole }: TraineeDashbo
     setLoading(true);
     setError(null);
     try {
-      const data = await traineeService.getDossier('priya');
+      const targetId = authProfile?.traineeId || 'me';
+      const data = await traineeService.getDossier(targetId);
       setDossier(data);
 
       const cert = data.certifications[0];

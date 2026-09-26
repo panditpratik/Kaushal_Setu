@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 scratch/
+.env
+.env.*
+!.env.example
+server/.env
+server/pgdata
 
 # Editor directories and files
 .vscode/*
