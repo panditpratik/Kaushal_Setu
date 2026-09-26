@@ -49,7 +49,7 @@ export interface SkillGauge {
   category: string;
   score: number;
   benchmark: number;
-  status: 'exceeds' | 'parity' | 'gap';
+  status: 'exceeds' | 'parity' | 'gap' | 'deficit';
   note: string;
 }
 
@@ -58,7 +58,7 @@ export interface FollowUpItem {
   date: string;
   title: string;
   description: string;
-  status: 'scheduled' | 'action_required' | 'pending_signoff';
+  status?: 'scheduled' | 'action_required' | 'pending_signoff' | string;
   badge: string;
   actionText: string;
 }
@@ -70,11 +70,14 @@ export interface EmployerCandidate {
   batch: string;
   joinDate: string;
   tenure: string;
-  retention3m: 'verified' | 'pending' | 'flagged';
-  retention6m: 'verified' | 'pending' | 'flagged';
-  retention12m: 'verified' | 'pending' | 'flagged';
+  retention3m: 'verified' | 'pending' | 'flagged' | string;
+  retention6m: 'verified' | 'pending' | 'flagged' | string;
+  retention12m: 'verified' | 'pending' | 'flagged' | string;
   skillDeficiency?: string;
   wageStatus: string;
+  traineeId?: string;
+  validationStatus?: string;
+  outcomeId?: string;
 }
 
 export interface ProviderBatch {
@@ -88,5 +91,5 @@ export interface ProviderBatch {
   retentionRate12m: number;
   incentiveUnlocked: boolean;
   incentiveAmount: string;
-  status: 'active' | 'audited' | 'pending_verification';
+  status: 'active' | 'audited' | 'pending_verification' | string;
 }

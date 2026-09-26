@@ -1,14 +1,12 @@
-import { useState, useEffect } from 'react';
-import { PROVIDER_BATCHES } from '../data/mockData';
+import { useState, useEffect, useCallback } from 'react';
 import type { ProviderBatch } from '../types';
-import { fetchProviderBatches } from '../lib/api';
+import { providerService } from '../lib/api';
 import { 
-  UserCheck, 
-  Award, 
   Sparkles, 
   CheckCircle2, 
   AlertTriangle, 
-  BookOpen
+  BookOpen,
+  RefreshCw
 } from 'lucide-react';
 
 interface ProviderDashboardProps {
@@ -17,18 +15,75 @@ interface ProviderDashboardProps {
 }
 
 export function ProviderDashboard({ onNavigateHome, onSwitchRole }: ProviderDashboardProps) {
-  const [batches, setBatches] = useState<ProviderBatch[]>(PROVIDER_BATCHES);
-  const [selectedBatch, setSelectedBatch] = useState<ProviderBatch>(PROVIDER_BATCHES[0]);
+  const [batches, setBatches] = useState<ProviderBatch[]>([]);
+  const [selectedBatch, setSelectedBatch] = useState<ProviderBatch | null>(null);
   const [moduleDeployed, setModuleDeployed] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const loadBatches = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await providerService.getBatches('centurion');
+      setBatches(data);
+      if (data.length > 0) {
+        setSelectedBatch(data[0]);
+      }
+    } catch (err: any) {
+      console.error('Failed to load provider batches:', err);
+      setError(err.message || 'Unable to load batches from PostgreSQL.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    fetchProviderBatches('centurion').then(res => {
-      if (res && res.length > 0) {
-        setBatches(res);
-        setSelectedBatch(res[0]);
-      }
-    });
-  }, []);
+    loadBatches();
+  }, [loadBatches]);
+
+  const handleDeployModule = async () => {
+    if (!selectedBatch) return;
+    try {
+      await providerService.deployModule('centurion', {
+        moduleName: 'PLC Troubleshooting & Industrial Calibration (18h)',
+        batchId: selectedBatch.id,
+        cohortName: selectedBatch.name,
+      });
+      setModuleDeployed(true);
+      setNotice('Intervention deployed: Micro-credential logged in PostgreSQL and dispatched to trainees.');
+      setTimeout(() => setNotice(null), 4000);
+    } catch (err: any) {
+      setNotice(`Failed to deploy module: ${err.message}`);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#F4F4E7] text-[#0F253B] flex flex-col items-center justify-center p-8">
+        <div className="w-12 h-12 rounded-full border-4 border-[#263B52] border-t-transparent animate-spin mb-4" />
+        <p className="font-mono text-sm text-[#47617C]">Loading Training Partner Batches from PostgreSQL...</p>
+      </div>
+    );
+  }
+
+  if (error || !selectedBatch) {
+    return (
+      <div className="min-h-screen bg-[#F4F4E7] text-[#0F253B] flex flex-col items-center justify-center p-8 text-center">
+        <AlertTriangle className="w-12 h-12 text-red-600 mb-4" />
+        <h2 className="text-xl font-bold mb-2">KaushalSetu Database Connection Error</h2>
+        <p className="text-sm font-mono text-red-700 max-w-md mb-6">{error || 'No batches found in database.'}</p>
+        <button
+          onClick={loadBatches}
+          className="px-4 py-2 bg-[#263B52] text-white rounded font-mono text-sm flex items-center gap-2 hover:bg-[#0F253B] transition-colors cursor-pointer"
+        >
+          <RefreshCw className="w-4 h-4" />
+          <span>Retry Connection</span>
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F4F4E7] text-[#0F253B] flex flex-col selection:bg-[#263B52] selection:text-white">
@@ -38,7 +93,7 @@ export function ProviderDashboard({ onNavigateHome, onSwitchRole }: ProviderDash
           <div className="flex items-center gap-3">
             <button 
               onClick={onNavigateHome}
-              className="flex items-center gap-2 group text-left"
+              className="flex items-center gap-2 group text-left cursor-pointer"
             >
               <div className="w-8 h-8 rounded bg-[#263B52] text-[#F4F4E7] flex items-center justify-center font-serif font-bold text-sm tracking-wider">
                 क
@@ -55,99 +110,91 @@ export function ProviderDashboard({ onNavigateHome, onSwitchRole }: ProviderDash
             <span className="hidden sm:inline-block h-4 w-px bg-[#D5CEAE]" />
             <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#D8EEDF] text-[#164627] text-xs font-mono border border-[#B6DBC0]">
               <span className="w-1.5 h-1.5 rounded-full bg-[#16803D]" />
-              SMART ID: TP-SMART-MH-9481 · 5-Star Accredited
+              SMART ID: NCVET-TP-MH-9481 · Connected to PostgreSQL
             </div>
           </div>
 
           <div className="flex items-center gap-2.5">
             <button
-              onClick={() => onSwitchRole('government')}
-              className="px-2.5 py-1.5 bg-[#EDE8D5] hover:bg-[#E2DDC7] text-[#263B52] rounded text-xs font-mono transition-colors"
+              onClick={() => onSwitchRole('employer')}
+              className="px-2.5 py-1.5 bg-[#EDE8D5] hover:bg-[#E2DDC7] text-[#263B52] rounded text-xs font-mono transition-colors cursor-pointer"
             >
-              Switch to Government View →
+              Switch to Employer View →
+            </button>
+            <button
+              onClick={() => onSwitchRole('government')}
+              className="px-2.5 py-1.5 bg-[#263B52] hover:bg-[#1A2C40] text-[#F4F4E7] rounded text-xs font-mono transition-colors cursor-pointer"
+            >
+              Government Directorate View →
             </button>
           </div>
         </div>
       </div>
 
+      {/* Action Notification Alert */}
+      {notice && (
+        <div className="bg-emerald-100 border-b border-emerald-300 px-4 py-2 text-center text-xs font-mono text-emerald-800 flex items-center justify-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+          <span>{notice}</span>
+        </div>
+      )}
+
       {/* Main Container */}
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6 sm:py-8 sm:px-8 space-y-6">
         
-        {/* Training Provider Header Snapshot */}
+        {/* Partner Header */}
         <div className="bg-[#FAF7EE] border border-[#D5CEAE] rounded-lg p-5 sm:p-6 shadow-xs">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
             
-            <div className="lg:col-span-5 flex items-start gap-4">
-              <div className="w-14 h-14 rounded bg-[#263B52] text-[#F3E8A8] flex items-center justify-center font-serif font-bold text-xl border-2 border-[#D5CEAE] shadow-xs">
-                CA
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-xl sm:text-2xl font-serif font-bold text-[#0F253B]">
-                    Centurion Skill Academy
-                  </h1>
-                </div>
-                <p className="text-xs text-[#5A6E85] mt-0.5">
-                  Pune Metro Regional Training Hub, Maharashtra
-                </p>
-                <div className="flex items-center gap-2 mt-2 text-xs font-mono text-[#7A8C9E]">
-                  <UserCheck className="w-3.5 h-3.5 text-[#263B52]" />
-                  <span>NCVET Authorized Awarding Body Partner #AAB-981</span>
-                </div>
-              </div>
+            <div className="md:col-span-6 space-y-1">
+              <span className="text-xs font-mono uppercase tracking-wider text-[#263B52] block">
+                Accredited Vocational Partner
+              </span>
+              <h1 className="text-2xl font-serif font-bold text-[#0F253B]">
+                Centurion Skill Academy Pune
+              </h1>
+              <p className="text-xs text-[#52667A]">
+                Centre: Chakan Auto Cluster, Pune, MH · {batches.length} Active Cohorts in Database
+              </p>
             </div>
 
-            {/* Metrics Ribbon */}
-            <div className="lg:col-span-7 grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="bg-[#EDE8D5] p-3 rounded border border-[#D5CEAE]">
-                <span className="text-[10px] font-mono uppercase text-[#687C92] block">Total Enrolled</span>
-                <span className="text-lg font-bold font-mono text-[#0F253B]">133</span>
-                <span className="text-[10px] font-mono text-[#15803D] block mt-0.5">3 Active Batches</span>
+            <div className="md:col-span-6 flex flex-wrap items-center justify-start md:justify-end gap-3 pt-2 md:pt-0">
+              <div className="p-3 bg-white border border-[#D5CEAE] rounded text-left min-w-[130px]">
+                <div className="text-[10px] font-mono uppercase text-[#7A8C9E]">Total Enrolled</div>
+                <div className="text-xl font-serif font-bold text-[#0F253B]">145 Trainees</div>
+                <div className="text-[10px] text-[#16803D] font-mono">92% Certified</div>
               </div>
 
-              <div className="bg-[#EDE8D5] p-3 rounded border border-[#D5CEAE]">
-                <span className="text-[10px] font-mono uppercase text-[#687C92] block">Placement Rate</span>
-                <span className="text-lg font-bold font-mono text-[#15803D]">91.2%</span>
-                <span className="text-[10px] font-mono text-[#5A6E85] block mt-0.5">117 Placed in Industry</span>
+              <div className="p-3 bg-white border border-[#D5CEAE] rounded text-left min-w-[130px]">
+                <div className="text-[10px] font-mono uppercase text-[#7A8C9E]">6M Retention</div>
+                <div className="text-xl font-serif font-bold text-[#16803D]">91.2%</div>
+                <div className="text-[10px] text-[#52667A] font-mono">Benchmark: 70%</div>
               </div>
 
-              <div className="bg-[#EDE8D5] p-3 rounded border border-[#D5CEAE]">
-                <span className="text-[10px] font-mono uppercase text-[#687C92] block">12M Retention</span>
-                <span className="text-lg font-bold font-mono text-[#0F253B]">84.6%</span>
-                <span className="text-[10px] font-mono text-[#15803D] block mt-0.5">+14% vs National Avg</span>
-              </div>
-
-              <div className="bg-[#EDE8D5] p-3 rounded border border-[#D5CEAE]">
-                <span className="text-[10px] font-mono uppercase text-[#687C92] block">DBT Incentive</span>
-                <span className="text-lg font-bold font-mono text-[#15803D] flex items-center gap-0.5">
-                  ₹7.50L
-                </span>
-                <span className="text-[10px] font-mono text-[#15803D] block mt-0.5">Unlocked via Retention</span>
+              <div className="p-3 bg-white border border-[#D5CEAE] rounded text-left min-w-[130px]">
+                <div className="text-[10px] font-mono uppercase text-[#7A8C9E]">DBT Incentive</div>
+                <div className="text-xl font-serif font-bold text-[#263B52]">₹7,50,000</div>
+                <div className="text-[10px] text-[#16803D] font-mono">Tranches 1-2 Unlocked</div>
               </div>
             </div>
 
           </div>
         </div>
 
-        {/* SECTION 1: Batch Performance & Retention Ledger */}
-        <div className="bg-[#FAF7EE] border border-[#D5CEAE] rounded-lg p-6 shadow-xs space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#D5CEAE] pb-4">
+        {/* SECTION 1: Batch Cohort Performance Telemetry */}
+        <div className="bg-[#FAF7EE] border border-[#D5CEAE] rounded-lg p-5 sm:p-6 shadow-xs space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#D5CEAE] pb-3">
             <div>
-              <div className="inline-flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider text-[#263B52]">
-                <Award className="w-3.5 h-3.5 text-[#263B52]" />
-                Section 01 · Batch Performance & Longitudinal Retention Telemetry
-              </div>
-              <h2 className="text-lg sm:text-xl font-serif font-bold text-[#0F253B]">
-                Accredited Cohorts & Direct Benefit Incentive Milestones
+              <span className="text-xs font-mono uppercase tracking-wider text-[#263B52] block">
+                Section 01 · Cohort Performance Telemetry
+              </span>
+              <h2 className="text-lg font-serif font-bold text-[#0F253B]">
+                Active Batches & Long-Term Placement Ledger
               </h2>
-            </div>
-
-            <div className="text-xs font-mono text-[#5A6E85]">
-              NCVET Tier-1 Retention Multiplier Applied
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {batches.map((batch) => {
               const isSelected = selectedBatch.id === batch.id;
               return (
@@ -155,61 +202,38 @@ export function ProviderDashboard({ onNavigateHome, onSwitchRole }: ProviderDash
                   key={batch.id}
                   onClick={() => setSelectedBatch(batch)}
                   className={`p-4 rounded border transition-all cursor-pointer ${
-                    isSelected 
-                      ? 'bg-white border-[#263B52] shadow-md ring-1 ring-[#263B52]'
-                      : 'bg-[#EDE8D5]/60 border-[#D5CEAE] hover:bg-[#FAF7EE]'
+                    isSelected
+                      ? 'bg-white border-[#263B52] shadow-xs ring-1 ring-[#263B52]'
+                      : 'bg-[#FAF7EE] border-[#D5CEAE] hover:bg-white'
                   }`}
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#FAF7EE] border border-[#D5CEAE] text-[#263B52]">
-                      {batch.id}
+                    <span className="font-mono text-xs font-bold text-[#263B52]">
+                      {batch.name}
                     </span>
-                    <span className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded ${
-                      batch.status === 'audited' 
-                        ? 'bg-[#D8EEDF] text-[#164627]' 
-                        : batch.status === 'active' 
-                        ? 'bg-[#C9DCF1] text-[#163558]'
-                        : 'bg-[#F3E8A8] text-[#54480A]'
-                    }`}>
-                      {batch.status}
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#D8EEDF] text-[#164627] font-semibold border border-[#B6DBC0]">
+                      {batch.sector}
                     </span>
                   </div>
 
-                  <h3 className="font-serif font-bold text-sm text-[#0F253B] line-clamp-1">
-                    {batch.name}
-                  </h3>
-                  <div className="text-xs text-[#5A6E85] mt-0.5 mb-3">
-                    {batch.sector}
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2 py-2 border-t border-[#D5CEAE] text-center text-xs font-mono">
+                  <div className="grid grid-cols-3 gap-2 py-2 text-center text-xs font-mono border-y border-[#EDE8D5]">
                     <div>
-                      <span className="text-[10px] text-[#7A8C9E] block">Enrolled</span>
-                      <span className="font-bold text-[#0F253B]">{batch.enrolled}</span>
+                      <div className="text-[#7A8C9E] text-[10px]">Enrolled</div>
+                      <div className="font-bold text-[#0F253B]">{batch.enrolled}</div>
                     </div>
                     <div>
-                      <span className="text-[10px] text-[#7A8C9E] block">Certified</span>
-                      <span className="font-bold text-[#0F253B]">{batch.certified}</span>
+                      <div className="text-[#7A8C9E] text-[10px]">Placed</div>
+                      <div className="font-bold text-[#16803D]">{batch.placed}</div>
                     </div>
                     <div>
-                      <span className="text-[10px] text-[#7A8C9E] block">Placed</span>
-                      <span className="font-bold text-[#15803D]">{batch.placed}</span>
+                      <div className="text-[#7A8C9E] text-[10px]">6M Retention</div>
+                      <div className="font-bold text-[#263B52]">{batch.retentionRate6m}%</div>
                     </div>
                   </div>
 
-                  <div className="pt-2 border-t border-[#D5CEAE] space-y-1.5 text-xs font-mono">
-                    <div className="flex justify-between items-center text-[11px]">
-                      <span className="text-[#5A6E85]">6M Retention Rate</span>
-                      <span className="font-bold text-[#15803D]">{batch.retentionRate6m}%</span>
-                    </div>
-                    <div className="flex justify-between items-center text-[11px]">
-                      <span className="text-[#5A6E85]">12M Retention Rate</span>
-                      <span className="font-bold text-[#263B52]">{batch.retentionRate12m}%</span>
-                    </div>
-                    <div className="flex justify-between items-center text-[11px] pt-1 text-[#164627] font-semibold bg-[#D8EEDF]/50 px-2 py-1 rounded">
-                      <span>DBT Incentive</span>
-                      <span>{batch.incentiveAmount}</span>
-                    </div>
+                  <div className="flex items-center justify-between pt-2 text-[11px] font-mono">
+                    <span className="text-[#52667A]">Incentive: {batch.incentiveAmount}</span>
+                    <span className="text-emerald-700 font-semibold">12M: {batch.retentionRate12m}%</span>
                   </div>
                 </div>
               );
@@ -223,46 +247,40 @@ export function ProviderDashboard({ onNavigateHome, onSwitchRole }: ProviderDash
           <div className="lg:col-span-7 bg-[#FAF7EE] border border-[#D5CEAE] rounded-lg p-6 shadow-xs space-y-4">
             <div className="border-b border-[#D5CEAE] pb-3">
               <span className="text-xs font-mono uppercase tracking-wider text-[#263B52] block">
-                Section 02 · DBT Performance Disbursement Protocol
+                Section 02 · Performance Disbursement Protocol
               </span>
               <h3 className="text-lg font-serif font-bold text-[#0F253B]">
-                Tranche 3 Incentive Unlock Ledger: {selectedBatch.id}
+                Tranche Incentive Unlock Ledger: {selectedBatch.id}
               </h3>
-              <p className="text-xs text-[#5A6E85] mt-1">
-                Under the KaushalSetu reform, training partner payments are disbursed in tranches tied directly to verified longitudinal retention milestones.
-              </p>
             </div>
 
             <div className="space-y-3 text-xs">
-              {/* Tranche 1 */}
               <div className="p-3 bg-white rounded border border-[#D5CEAE] flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-[#D8EEDF] text-[#164627] flex items-center justify-center font-bold">
                     <CheckCircle2 className="w-4 h-4" />
                   </div>
                   <div>
-                    <div className="font-bold text-[#0F253B]">Tranche 1: Mobilization & Workshop Training (30%)</div>
+                    <div className="font-bold text-[#0F253B]">Tranche 1: Mobilization & Training (30%)</div>
                     <div className="text-[11px] text-[#7A8C9E]">420 Practical Hours verified via biometric attendance</div>
                   </div>
                 </div>
                 <span className="font-mono text-xs font-bold text-[#15803D]">Disbursed (₹4.20L)</span>
               </div>
 
-              {/* Tranche 2 */}
               <div className="p-3 bg-white rounded border border-[#D5CEAE] flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-[#D8EEDF] text-[#164627] flex items-center justify-center font-bold">
                     <CheckCircle2 className="w-4 h-4" />
                   </div>
                   <div>
-                    <div className="font-bold text-[#0F253B]">Tranche 2: NCVET Assessment & First Placement (50%)</div>
-                    <div className="text-[11px] text-[#7A8C9E]">89% pass rate, 40 trainees placed in Tier-1 auto ancillaries</div>
+                    <div className="font-bold text-[#0F253B]">Tranche 2: Assessment & Placement (50%)</div>
+                    <div className="text-[11px] text-[#7A8C9E]">89% pass rate, placed in Tier-1 manufacturing</div>
                   </div>
                 </div>
                 <span className="font-mono text-xs font-bold text-[#15803D]">Disbursed (₹7.00L)</span>
               </div>
 
-              {/* Tranche 3 */}
               <div className="p-3 bg-[#EDE8D5] rounded border border-[#263B52] flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-[#263B52] text-[#F3E8A8] flex items-center justify-center font-bold">
@@ -270,7 +288,7 @@ export function ProviderDashboard({ onNavigateHome, onSwitchRole }: ProviderDash
                   </div>
                   <div>
                     <div className="font-bold text-[#0F253B]">Tranche 3: 12-Month Retention Bonus (20% Premium)</div>
-                    <div className="text-[11px] text-[#5A6E85]">EPFO-verified {selectedBatch.retentionRate12m}% retention exceeds the 70% threshold</div>
+                    <div className="text-[11px] text-[#5A6E85]">Verified {selectedBatch.retentionRate12m}% retention exceeds threshold</div>
                   </div>
                 </div>
                 <div className="text-right">
@@ -298,7 +316,7 @@ export function ProviderDashboard({ onNavigateHome, onSwitchRole }: ProviderDash
                   <AlertTriangle className="w-3.5 h-3.5 text-[#D97706]" />
                   Tata Motors Operational Report
                 </span>
-                <span className="text-[10px] font-mono text-[#7A8C9E]">24 Nov 2024</span>
+                <span className="text-[10px] font-mono text-[#7A8C9E]">Live Feed</span>
               </div>
 
               <p className="text-[11px] text-[#0F253B] leading-relaxed">
@@ -310,7 +328,7 @@ export function ProviderDashboard({ onNavigateHome, onSwitchRole }: ProviderDash
                   Micro-Credential #IND-409
                 </span>
                 <button
-                  onClick={() => setModuleDeployed(true)}
+                  onClick={handleDeployModule}
                   className={`px-3 py-1.5 rounded text-xs font-mono transition-colors flex items-center gap-1 cursor-pointer ${
                     moduleDeployed 
                       ? 'bg-[#D8EEDF] text-[#164627] font-semibold' 
@@ -318,14 +336,14 @@ export function ProviderDashboard({ onNavigateHome, onSwitchRole }: ProviderDash
                   }`}
                 >
                   <BookOpen className="w-3.5 h-3.5" />
-                  <span>{moduleDeployed ? 'Module Deployed to LMS' : 'Deploy PLC Module'}</span>
+                  <span>{moduleDeployed ? 'Module Deployed to PostgreSQL' : 'Deploy PLC Module'}</span>
                 </button>
               </div>
             </div>
 
             <div className="text-[11px] text-[#687C92] bg-white p-3 rounded border border-[#D5CEAE] space-y-1">
               <div className="font-semibold text-[#0F253B]">Closing the Skilling Gap:</div>
-              <div>Deploying this micro-credential automatically alerts all 43 certified trainees from Batch 14 with a 10-hour weekend hybrid workshop on PLC diagnostic calibration.</div>
+              <div>Deploying this micro-credential automatically logs an intervention record in PostgreSQL and alerts all certified trainees from {selectedBatch.name}.</div>
             </div>
           </div>
 
@@ -335,7 +353,7 @@ export function ProviderDashboard({ onNavigateHome, onSwitchRole }: ProviderDash
 
       {/* Footer */}
       <div className="border-t border-[#D5CEAE] bg-[#FAF7EE] py-3 px-4 text-center text-xs font-mono text-[#687C92]">
-        KaushalSetu Training Partner Terminal · National Council for Vocational Education and Training
+        KaushalSetu Training Partner Terminal · National Council for Vocational Education and Training · Live PostgreSQL Sync
       </div>
     </div>
   );

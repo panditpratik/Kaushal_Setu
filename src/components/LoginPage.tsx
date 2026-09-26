@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { StakeholderRole, AppView } from '../types';
+import { authService } from '../lib/api';
 import { 
   ShieldCheck, 
   KeyRound, 
@@ -21,11 +22,10 @@ interface LoginPageProps {
 
 export function LoginPage({ onLogin, onNavigateHome }: LoginPageProps) {
   const [selectedRole, setSelectedRole] = useState<StakeholderRole>('trainee');
-  const [identifier, setIdentifier] = useState('9876543210');
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpValue, setOtpValue] = useState(['8', '4', '9', '2', '0', '1']);
-  const [countdown, setCountdown] = useState(45);
+  const [emailInput, setEmailInput] = useState('trainee@kaushalsetu.gov.in');
+  const [passwordInput, setPasswordInput] = useState('Password@123');
   const [isVerifying, setIsVerifying] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const roleConfigs = [
     {
@@ -33,9 +33,8 @@ export function LoginPage({ onLogin, onNavigateHome }: LoginPageProps) {
       index: '01',
       title: 'Trainee & Alumni',
       subtitle: 'Aadhaar / Mobile / DigiLocker',
-      defaultId: '9876543210',
-      idLabel: 'Registered Mobile / Aadhaar Virtual ID',
-      placeholder: 'Enter 10-digit mobile or 16-digit VID',
+      defaultEmail: 'trainee@kaushalsetu.gov.in',
+      idLabel: 'Registered Email or Passport Identifier',
       icon: GraduationCap,
       targetView: 'trainee-dashboard' as AppView,
       demoName: 'Priya Sharma (Level 4 Industrial Electrician)',
@@ -46,9 +45,8 @@ export function LoginPage({ onLogin, onNavigateHome }: LoginPageProps) {
       index: '02',
       title: 'Hiring Employer',
       subtitle: 'Corporate GSTIN / EPFO LIN',
-      defaultId: 'GSTIN27AABCT2391K1Z2',
-      idLabel: 'Corporate GSTIN or Shram Suvidha LIN',
-      placeholder: 'e.g. 27AABCT2391K1Z2',
+      defaultEmail: 'employer@tata.example.com',
+      idLabel: 'Corporate / Shram Suvidha Email',
       icon: Building2,
       targetView: 'employer-dashboard' as AppView,
       demoName: 'Tata Motors Ancillary Ltd. (Chakan Unit)',
@@ -59,9 +57,8 @@ export function LoginPage({ onLogin, onNavigateHome }: LoginPageProps) {
       index: '03',
       title: 'Training Partner (TP/ITI)',
       subtitle: 'SMART ID / SIP Portal Code',
-      defaultId: 'TP-SMART-MH-9481',
-      idLabel: 'SMART / NSDC Training Center ID',
-      placeholder: 'e.g. TC-401-PUN-09',
+      defaultEmail: 'provider@centurion.example.com',
+      idLabel: 'SMART / NSDC Accredited Email',
       icon: UserCheck,
       targetView: 'provider-dashboard' as AppView,
       demoName: 'Centurion Skill Academy (Pune Metro)',
@@ -72,44 +69,72 @@ export function LoginPage({ onLogin, onNavigateHome }: LoginPageProps) {
       index: '04',
       title: 'Mission & Government',
       subtitle: 'Parichay SSO / Jan Samarth',
-      defaultId: 'officer.deshmukh@msde.gov.in',
+      defaultEmail: 'gov@msde.gov.in',
       idLabel: 'NIC / Parichay Official Email',
-      placeholder: 'name.domain@gov.in / nic.in',
       icon: Landmark,
       targetView: 'government-dashboard' as AppView,
       demoName: 'MSDE State Directorate (Maharashtra SSM)',
-      ssoProvider: 'Parichay Sovereign Auth (NIC)'
+      ssoProvider: 'Parichay Jan Samarth SSO'
     }
   ];
 
-  const currentConfig = roleConfigs.find(r => r.role === selectedRole) || roleConfigs[0];
+  const currentConfig = roleConfigs.find(c => c.role === selectedRole) || roleConfigs[0];
 
   const handleRoleSelect = (role: StakeholderRole) => {
     setSelectedRole(role);
-    const cfg = roleConfigs.find(r => r.role === role);
+    setErrorMessage(null);
+    const cfg = roleConfigs.find(c => c.role === role);
     if (cfg) {
-      setIdentifier(cfg.defaultId);
+      setEmailInput(cfg.defaultEmail);
+      setPasswordInput('Password@123');
     }
-    setOtpSent(false);
   };
 
-  const handleSendOtp = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!identifier) return;
-    setOtpSent(true);
-    setCountdown(45);
-  };
-
-  const handleVerifyAndEnter = () => {
     setIsVerifying(true);
-    setTimeout(() => {
+    setErrorMessage(null);
+
+    try {
+      const data = await authService.login(emailInput, passwordInput);
+      const roleTarget: Record<string, { role: StakeholderRole; view: AppView }> = {
+        TRAINEE: { role: 'trainee', view: 'trainee-dashboard' },
+        EMPLOYER: { role: 'employer', view: 'employer-dashboard' },
+        TRAINING_PROVIDER: { role: 'provider', view: 'provider-dashboard' },
+        GOVERNMENT: { role: 'government', view: 'government-dashboard' },
+      };
+
+      const mapped = roleTarget[data.user.role] || { role: selectedRole, view: currentConfig.targetView };
+      onLogin(mapped.role, mapped.view);
+    } catch (err: any) {
+      console.error('Login error:', err);
+      setErrorMessage(err.message || 'Invalid email or password. Please verify your credentials.');
+    } finally {
       setIsVerifying(false);
-      onLogin(selectedRole, currentConfig.targetView);
-    }, 600);
+    }
   };
 
-  const handleQuickDemoEnter = (role: StakeholderRole, view: AppView) => {
-    onLogin(role, view);
+  const handleQuickEvaluatorLogin = async (role: StakeholderRole, targetView: AppView) => {
+    setIsVerifying(true);
+    setErrorMessage(null);
+    const cfg = roleConfigs.find(c => c.role === role);
+    const email = cfg ? cfg.defaultEmail : 'trainee@kaushalsetu.gov.in';
+
+    try {
+      const data = await authService.login(email, 'Password@123');
+      const roleTarget: Record<string, { role: StakeholderRole; view: AppView }> = {
+        TRAINEE: { role: 'trainee', view: 'trainee-dashboard' },
+        EMPLOYER: { role: 'employer', view: 'employer-dashboard' },
+        TRAINING_PROVIDER: { role: 'provider', view: 'provider-dashboard' },
+        GOVERNMENT: { role: 'government', view: 'government-dashboard' },
+      };
+      const mapped = roleTarget[data.user.role] || { role, view: targetView };
+      onLogin(mapped.role, mapped.view);
+    } catch (err: any) {
+      setErrorMessage(`Authentication failed: ${err.message}`);
+    } finally {
+      setIsVerifying(false);
+    }
   };
 
   return (
@@ -119,7 +144,7 @@ export function LoginPage({ onLogin, onNavigateHome }: LoginPageProps) {
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <button 
             onClick={onNavigateHome}
-            className="flex items-center gap-2 group text-left"
+            className="flex items-center gap-2 group text-left cursor-pointer"
           >
             <div className="w-8 h-8 rounded bg-[#263B52] text-[#F4F4E7] flex items-center justify-center font-serif font-bold text-sm tracking-wider shadow-sm">
               क
@@ -136,12 +161,12 @@ export function LoginPage({ onLogin, onNavigateHome }: LoginPageProps) {
 
           <div className="flex items-center gap-3">
             <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#D8EEDF] text-[#164627] text-xs font-mono rounded border border-[#B6DBC0]">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#16803D] animate-ping" />
-              Sovereign Gate v2.4 Active
+              <span className="w-1.5 h-1.5 rounded-full bg-[#16803D]" />
+              PostgreSQL Authentication Active
             </span>
             <button
               onClick={onNavigateHome}
-              className="text-xs font-medium text-[#263B52] hover:underline px-2 py-1"
+              className="text-xs font-medium text-[#263B52] hover:underline px-2 py-1 cursor-pointer"
             >
               ← Back to Overview
             </button>
@@ -178,7 +203,7 @@ export function LoginPage({ onLogin, onNavigateHome }: LoginPageProps) {
                     key={cfg.role}
                     type="button"
                     onClick={() => handleRoleSelect(cfg.role)}
-                    className={`w-full text-left p-3.5 rounded border transition-all duration-150 flex items-center justify-between ${
+                    className={`w-full text-left p-3.5 rounded border transition-all duration-150 flex items-center justify-between cursor-pointer ${
                       isSelected
                         ? 'bg-[#263B52] text-[#F4F4E7] border-[#0F253B] shadow-md ring-1 ring-[#0F253B]'
                         : 'bg-[#FAF7EE] text-[#0F253B] border-[#D5CEAE] hover:bg-[#F2EFE4] hover:border-[#B8B08D]'
@@ -215,43 +240,51 @@ export function LoginPage({ onLogin, onNavigateHome }: LoginPageProps) {
               })}
             </div>
 
-            {/* Quick Demo Simulator Box */}
+            {/* Quick Evaluator Access Box */}
             <div className="p-4 bg-[#EDE8D5] rounded border border-[#D5CEAE] space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-mono uppercase tracking-wider text-[#263B52] font-semibold flex items-center gap-1.5">
                   <KeyRound className="w-3.5 h-3.5 text-[#263B52]" />
-                  Instant Evaluator Bypass
+                  Evaluator Fast-Track Login
                 </span>
-                <span className="text-[10px] font-mono text-[#5A6E85]">Dev & Pilot Access</span>
+                <span className="text-[10px] font-mono text-[#15803D] font-bold">PostgreSQL Verified</span>
               </div>
               <p className="text-xs text-[#4A5D70]">
-                Jump straight into any stakeholder view with pre-authenticated mock telemetry without typing:
+                Click below to authenticate against PostgreSQL using real bcrypt credentials:
               </p>
               <div className="grid grid-cols-2 gap-2 pt-1">
                 <button
-                  onClick={() => handleQuickDemoEnter('trainee', 'trainee-dashboard')}
-                  className="px-2.5 py-2 bg-[#FAF7EE] hover:bg-white text-xs font-medium text-[#0F253B] rounded border border-[#C5BDA0] text-left transition-colors flex items-center justify-between group"
+                  type="button"
+                  disabled={isVerifying}
+                  onClick={() => handleQuickEvaluatorLogin('trainee', 'trainee-dashboard')}
+                  className="px-2.5 py-2 bg-[#FAF7EE] hover:bg-white text-xs font-medium text-[#0F253B] rounded border border-[#C5BDA0] text-left transition-colors flex items-center justify-between group cursor-pointer disabled:opacity-50"
                 >
                   <span>🎓 Trainee (Priya)</span>
                   <ArrowRight className="w-3 h-3 text-[#7A8C9E] group-hover:text-[#0F253B] group-hover:translate-x-0.5 transition-transform" />
                 </button>
                 <button
-                  onClick={() => handleQuickDemoEnter('employer', 'employer-dashboard')}
-                  className="px-2.5 py-2 bg-[#FAF7EE] hover:bg-white text-xs font-medium text-[#0F253B] rounded border border-[#C5BDA0] text-left transition-colors flex items-center justify-between group"
+                  type="button"
+                  disabled={isVerifying}
+                  onClick={() => handleQuickEvaluatorLogin('employer', 'employer-dashboard')}
+                  className="px-2.5 py-2 bg-[#FAF7EE] hover:bg-white text-xs font-medium text-[#0F253B] rounded border border-[#C5BDA0] text-left transition-colors flex items-center justify-between group cursor-pointer disabled:opacity-50"
                 >
                   <span>🏢 Employer (Tata)</span>
                   <ArrowRight className="w-3 h-3 text-[#7A8C9E] group-hover:text-[#0F253B] group-hover:translate-x-0.5 transition-transform" />
                 </button>
                 <button
-                  onClick={() => handleQuickDemoEnter('provider', 'provider-dashboard')}
-                  className="px-2.5 py-2 bg-[#FAF7EE] hover:bg-white text-xs font-medium text-[#0F253B] rounded border border-[#C5BDA0] text-left transition-colors flex items-center justify-between group"
+                  type="button"
+                  disabled={isVerifying}
+                  onClick={() => handleQuickEvaluatorLogin('provider', 'provider-dashboard')}
+                  className="px-2.5 py-2 bg-[#FAF7EE] hover:bg-white text-xs font-medium text-[#0F253B] rounded border border-[#C5BDA0] text-left transition-colors flex items-center justify-between group cursor-pointer disabled:opacity-50"
                 >
                   <span>🏛️ Provider (Centurion)</span>
                   <ArrowRight className="w-3 h-3 text-[#7A8C9E] group-hover:text-[#0F253B] group-hover:translate-x-0.5 transition-transform" />
                 </button>
                 <button
-                  onClick={() => handleQuickDemoEnter('government', 'government-dashboard')}
-                  className="px-2.5 py-2 bg-[#FAF7EE] hover:bg-white text-xs font-medium text-[#0F253B] rounded border border-[#C5BDA0] text-left transition-colors flex items-center justify-between group"
+                  type="button"
+                  disabled={isVerifying}
+                  onClick={() => handleQuickEvaluatorLogin('government', 'government-dashboard')}
+                  className="px-2.5 py-2 bg-[#FAF7EE] hover:bg-white text-xs font-medium text-[#0F253B] rounded border border-[#C5BDA0] text-left transition-colors flex items-center justify-between group cursor-pointer disabled:opacity-50"
                 >
                   <span>🇮🇳 Govt (MSDE SSM)</span>
                   <ArrowRight className="w-3 h-3 text-[#7A8C9E] group-hover:text-[#0F253B] group-hover:translate-x-0.5 transition-transform" />
@@ -260,7 +293,7 @@ export function LoginPage({ onLogin, onNavigateHome }: LoginPageProps) {
             </div>
           </div>
 
-          {/* Right Column: Authentication Terminal & Verification */}
+          {/* Right Column: Authentication Terminal */}
           <div className="lg:col-span-7">
             <div className="bg-[#FAF7EE] border border-[#D5CEAE] rounded-lg shadow-sm p-6 sm:p-8 space-y-6">
               
@@ -270,17 +303,17 @@ export function LoginPage({ onLogin, onNavigateHome }: LoginPageProps) {
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-[#15803D]" />
                     <span className="font-mono text-xs font-bold uppercase tracking-wider text-[#263B52]">
-                      Secure Portal Entry — {currentConfig.title}
+                      Authentication Terminal — {currentConfig.title}
                     </span>
                   </div>
                   <div className="text-xs text-[#5A6E85] mt-1">
-                    Authenticating against {currentConfig.ssoProvider}
+                    Authenticating against KaushalSetu PostgreSQL Core
                   </div>
                 </div>
 
                 <div className="text-right hidden sm:block">
                   <span className="text-[11px] font-mono text-[#7A8C9E] block">Protocol ID</span>
-                  <span className="text-xs font-mono font-bold text-[#0F253B]">AUTH-MSDE-2025/4A</span>
+                  <span className="text-xs font-mono font-bold text-[#0F253B]">JWT-BCRYPT-2026</span>
                 </div>
               </div>
 
@@ -290,177 +323,84 @@ export function LoginPage({ onLogin, onNavigateHome }: LoginPageProps) {
                   {currentConfig.role[0].toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs text-[#5A6E85] uppercase font-mono">Sample Verified Entity</div>
+                  <div className="text-xs text-[#5A6E85] uppercase font-mono">Target Seed Identity</div>
                   <div className="text-sm font-semibold text-[#0F253B] truncate">
                     {currentConfig.demoName}
                   </div>
                 </div>
                 <div className="hidden sm:flex items-center gap-1 text-[11px] font-mono text-[#164627] bg-[#D8EEDF] px-2 py-0.5 rounded border border-[#B6DBC0]">
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  Whitelisted
+                  Database Record Ready
                 </div>
               </div>
 
-              {!otpSent ? (
-                /* Step 1: Identifier Input Form */
-                <form onSubmit={handleSendOtp} className="space-y-5">
-                  <div>
-                    <label className="block text-xs font-mono uppercase tracking-wider text-[#263B52] font-semibold mb-2">
-                      {currentConfig.idLabel}
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={identifier}
-                        onChange={(e) => setIdentifier(e.target.value)}
-                        placeholder={currentConfig.placeholder}
-                        required
-                        className="w-full bg-white border border-[#C5BDA0] focus:border-[#263B52] focus:ring-1 focus:ring-[#263B52] rounded px-3.5 py-2.5 text-sm font-mono text-[#0F253B] shadow-inner outline-none"
-                      />
-                      <div className="absolute right-3 top-2.5 text-xs font-mono text-[#7A8C9E]">
-                        UIDAI / NCVET
-                      </div>
-                    </div>
-                    <p className="mt-1.5 text-xs text-[#687C92]">
-                      Your credential is cryptographically mapped to the 3-party longitudinal ledger.
-                    </p>
-                  </div>
-
-                  <div className="pt-2">
-                    <button
-                      type="submit"
-                      className="w-full bg-[#263B52] hover:bg-[#1A2C40] text-[#F4F4E7] py-3 px-4 rounded font-medium text-sm transition-all duration-150 flex items-center justify-center gap-2 shadow-md hover:shadow cursor-pointer"
-                    >
-                      <KeyRound className="w-4 h-4 text-[#F3E8A8]" />
-                      <span>Request Time-Based 6-Digit OTP</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                /* Step 2: OTP Verification Form */
-                <div className="space-y-5 animate-in fade-in duration-200">
-                  <div className="flex items-center justify-between bg-[#F2C8B4]/20 border border-[#F2C8B4] p-3 rounded">
-                    <div className="flex items-center gap-2">
-                      <AlertCircle className="w-4 h-4 text-[#D97706]" />
-                      <span className="text-xs text-[#0F253B]">
-                        OTP sent to registered phone/email mapped to <strong className="font-mono">{identifier}</strong>
-                      </span>
-                    </div>
-                    <button 
-                      onClick={() => setOtpSent(false)} 
-                      className="text-xs text-[#263B52] hover:underline font-mono"
-                    >
-                      Edit
-                    </button>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-mono uppercase tracking-wider text-[#263B52] font-semibold mb-2">
-                      Enter 6-Digit Authentication Token
-                    </label>
-                    <div className="flex gap-2 sm:gap-3 justify-between">
-                      {otpValue.map((digit, idx) => (
-                        <input
-                          key={idx}
-                          type="text"
-                          maxLength={1}
-                          value={digit}
-                          onChange={(e) => {
-                            const newOtp = [...otpValue];
-                            newOtp[idx] = e.target.value.slice(-1);
-                            setOtpValue(newOtp);
-                          }}
-                          className="w-12 h-12 text-center text-xl font-mono font-bold bg-white border border-[#C5BDA0] focus:border-[#263B52] focus:ring-2 focus:ring-[#263B52] rounded shadow-inner outline-none text-[#0F253B]"
-                        />
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between text-xs font-mono text-[#5A6E85]">
-                    <div className="flex items-center gap-1.5">
-                      <RefreshCw className={`w-3.5 h-3.5 ${countdown > 0 ? '' : 'text-[#15803D]'}`} />
-                      <span>Resend OTP in 00:{countdown.toString().padStart(2, '0')}</span>
-                    </div>
-                    <span className="text-[#164627] font-semibold">Test Code Pre-filled</span>
-                  </div>
-
-                  <div className="pt-2">
-                    <button
-                      type="button"
-                      disabled={isVerifying}
-                      onClick={handleVerifyAndEnter}
-                      className="w-full bg-[#15803D] hover:bg-[#116631] text-white py-3 px-4 rounded font-medium text-sm transition-all duration-150 flex items-center justify-center gap-2 shadow-md hover:shadow cursor-pointer disabled:opacity-50"
-                    >
-                      {isVerifying ? (
-                        <>
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>Establishing Cryptographic Session...</span>
-                        </>
-                      ) : (
-                        <>
-                          <ShieldCheck className="w-4 h-4 text-[#D8EEDF]" />
-                          <span>Verify & Enter Dashboard</span>
-                          <ArrowRight className="w-4 h-4" />
-                        </>
-                      )}
-                    </button>
-                  </div>
+              {errorMessage && (
+                <div className="p-3 bg-red-100 border border-red-300 rounded text-xs font-mono text-red-800 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                  <span>{errorMessage}</span>
                 </div>
               )}
 
-              {/* Federated Single Sign-On Divider */}
-              <div className="pt-4 border-t border-[#D5CEAE]">
-                <div className="text-[11px] font-mono uppercase tracking-wider text-[#7A8C9E] text-center mb-3">
-                  Or Sovereign Federated Identity
+              {/* Real Login Form */}
+              <form onSubmit={handleLoginSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-mono uppercase tracking-wider text-[#263B52] font-semibold mb-1">
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    value={emailInput}
+                    onChange={(e) => setEmailInput(e.target.value)}
+                    required
+                    placeholder="Enter registered email"
+                    className="w-full bg-white border border-[#C5BDA0] focus:border-[#263B52] focus:ring-1 focus:ring-[#263B52] rounded px-3.5 py-2.5 text-sm font-mono text-[#0F253B] shadow-inner outline-none"
+                  />
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  <button
-                    onClick={() => handleQuickDemoEnter(selectedRole, currentConfig.targetView)}
-                    className="p-2.5 rounded bg-white hover:bg-[#F2EFE4] border border-[#D5CEAE] text-left transition-colors flex items-center gap-2 group"
-                  >
-                    <div className="w-6 h-6 rounded bg-[#EDE8D5] flex items-center justify-center text-xs font-bold text-[#263B52]">
-                      D
-                    </div>
-                    <div className="truncate">
-                      <div className="text-xs font-medium text-[#0F253B]">DigiLocker</div>
-                      <div className="text-[10px] text-[#7A8C9E]">Govt of India</div>
-                    </div>
-                  </button>
 
-                  <button
-                    onClick={() => handleQuickDemoEnter(selectedRole, currentConfig.targetView)}
-                    className="p-2.5 rounded bg-white hover:bg-[#F2EFE4] border border-[#D5CEAE] text-left transition-colors flex items-center gap-2 group"
-                  >
-                    <div className="w-6 h-6 rounded bg-[#EDE8D5] flex items-center justify-center text-xs font-bold text-[#263B52]">
-                      P
-                    </div>
-                    <div className="truncate">
-                      <div className="text-xs font-medium text-[#0F253B]">Parichay SSO</div>
-                      <div className="text-[10px] text-[#7A8C9E]">NIC Services</div>
-                    </div>
-                  </button>
+                <div>
+                  <label className="block text-xs font-mono uppercase tracking-wider text-[#263B52] font-semibold mb-1">
+                    Password
+                  </label>
+                  <input
+                    type="password"
+                    value={passwordInput}
+                    onChange={(e) => setPasswordInput(e.target.value)}
+                    required
+                    placeholder="Enter password"
+                    className="w-full bg-white border border-[#C5BDA0] focus:border-[#263B52] focus:ring-1 focus:ring-[#263B52] rounded px-3.5 py-2.5 text-sm font-mono text-[#0F253B] shadow-inner outline-none"
+                  />
+                  <div className="text-[11px] font-mono text-[#7A8C9E] mt-1">
+                    Development seed accounts password: <code className="bg-[#EDE8D5] px-1 py-0.5 rounded text-[#263B52]">Password@123</code>
+                  </div>
+                </div>
 
+                <div className="pt-2">
                   <button
-                    onClick={() => handleQuickDemoEnter(selectedRole, currentConfig.targetView)}
-                    className="p-2.5 rounded bg-white hover:bg-[#F2EFE4] border border-[#D5CEAE] text-left transition-colors flex items-center gap-2 group"
+                    type="submit"
+                    disabled={isVerifying}
+                    className="w-full bg-[#263B52] hover:bg-[#1A2C40] text-[#F4F4E7] py-3 px-4 rounded font-medium text-sm transition-all duration-150 flex items-center justify-center gap-2 shadow-md hover:shadow cursor-pointer disabled:opacity-50"
                   >
-                    <div className="w-6 h-6 rounded bg-[#EDE8D5] flex items-center justify-center text-xs font-bold text-[#263B52]">
-                      J
-                    </div>
-                    <div className="truncate">
-                      <div className="text-xs font-medium text-[#0F253B]">Jan Samarth</div>
-                      <div className="text-[10px] text-[#7A8C9E]">Direct Benefit</div>
-                    </div>
+                    {isVerifying ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Verifying with PostgreSQL API...</span>
+                      </>
+                    ) : (
+                      <>
+                        <KeyRound className="w-4 h-4 text-[#F3E8A8]" />
+                        <span>Authenticate & Enter Portal</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    )}
                   </button>
                 </div>
-              </div>
+              </form>
 
               {/* Data Compliance & Legal Footer note */}
               <div className="text-[11px] text-[#7A8C9E] bg-[#EDE8D5]/50 p-3 rounded border border-[#D5CEAE] flex items-start gap-2">
                 <ShieldCheck className="w-4 h-4 text-[#263B52] shrink-0 mt-0.5" />
                 <span>
-                  Consent Notice: Protected under Digital Personal Data Protection (DPDP) Act 2023. Authentication initiates an ephemeral cryptographic signature for longitudinal tracking validation.
+                  Consent Notice: Protected under Digital Personal Data Protection (DPDP) Act 2023. Authentication initiates an ephemeral cryptographic session token.
                 </span>
               </div>
             </div>

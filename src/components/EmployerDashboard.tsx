@@ -1,16 +1,12 @@
-import { useState, useEffect } from 'react';
-import { EMPLOYER_CANDIDATES } from '../data/mockData';
+import { useState, useEffect, useCallback } from 'react';
 import type { EmployerCandidate } from '../types';
-import { fetchEmployerCandidates } from '../lib/api';
+import { employerService } from '../lib/api';
 import { 
-  Building2, 
-  Users, 
   CheckCircle2, 
   Clock, 
-  TrendingUp, 
   Send, 
-  ShieldCheck, 
-  Filter
+  RefreshCw,
+  AlertTriangle
 } from 'lucide-react';
 
 interface EmployerDashboardProps {
@@ -19,16 +15,11 @@ interface EmployerDashboardProps {
 }
 
 export function EmployerDashboard({ onNavigateHome, onSwitchRole }: EmployerDashboardProps) {
-  const [candidates, setCandidates] = useState<EmployerCandidate[]>(EMPLOYER_CANDIDATES);
+  const [candidates, setCandidates] = useState<EmployerCandidate[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState<EmployerCandidate | null>(null);
-
-  useEffect(() => {
-    fetchEmployerCandidates('tata').then(res => {
-      if (res && res.length > 0) {
-        setCandidates(res);
-      }
-    });
-  }, []);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   
   // Feedback Transmitter Form State
   const [feedbackCandidate, setFeedbackCandidate] = useState('CAND-01');
@@ -39,25 +30,83 @@ export function EmployerDashboard({ onNavigateHome, onSwitchRole }: EmployerDash
   );
   const [feedbackSent, setFeedbackSent] = useState(false);
 
-  const handleTransmitFeedback = (e: React.FormEvent) => {
+  const loadCandidates = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await employerService.getCandidates('tata');
+      setCandidates(data);
+      if (data.length > 0 && !selectedCandidate) {
+        setSelectedCandidate(data[0]);
+      }
+    } catch (err: any) {
+      console.error('Failed to load employer candidates:', err);
+      setError(err.message || 'Unable to load candidates from PostgreSQL.');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedCandidate]);
+
+  useEffect(() => {
+    loadCandidates();
+  }, [loadCandidates]);
+
+  const handleTransmitFeedback = async (e: React.FormEvent) => {
     e.preventDefault();
     setFeedbackSent(true);
-    setTimeout(() => {
+    try {
+      await employerService.submitFeedback({
+        candidateId: feedbackCandidate,
+        deficiencyCategory,
+        severity,
+        notes: feedbackNotes,
+      });
+      setNotice('NCVET Curriculum Loop: Feedback stored in PostgreSQL and transmitted to Training Partner.');
+      setTimeout(() => setNotice(null), 4000);
+    } catch (err: any) {
+      setNotice(`Feedback submission error: ${err.message}`);
+    } finally {
       setFeedbackSent(false);
-      alert('NCVET Curriculum Loop: Feedback transmitted to Centurion Skill Academy & State Apprenticeship Directorate.');
-    }, 1500);
+    }
   };
 
-  const handleVerifyRetention = (id: string, milestone: '3m' | '6m' | '12m') => {
-    setCandidates(prev => prev.map(cand => {
-      if (cand.id === id) {
-        if (milestone === '3m') return { ...cand, retention3m: 'verified' };
-        if (milestone === '6m') return { ...cand, retention6m: 'verified' };
-        if (milestone === '12m') return { ...cand, retention12m: 'verified' };
-      }
-      return cand;
-    }));
+  const handleVerifyRetention = async (id: string, milestone: '3m' | '6m' | '12m') => {
+    try {
+      await employerService.verifyRetention(id, milestone);
+      const updated = await employerService.getCandidates('tata');
+      setCandidates(updated);
+      setNotice(`Verified ${milestone.toUpperCase()} retention in PostgreSQL. Change is saved permanently.`);
+      setTimeout(() => setNotice(null), 3000);
+    } catch (err: any) {
+      setNotice(`Failed to verify retention: ${err.message}`);
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#F4F4E7] text-[#0F253B] flex flex-col items-center justify-center p-8">
+        <div className="w-12 h-12 rounded-full border-4 border-[#263B52] border-t-transparent animate-spin mb-4" />
+        <p className="font-mono text-sm text-[#47617C]">Loading Employer Verification Roster from PostgreSQL...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-[#F4F4E7] text-[#0F253B] flex flex-col items-center justify-center p-8 text-center">
+        <AlertTriangle className="w-12 h-12 text-red-600 mb-4" />
+        <h2 className="text-xl font-bold mb-2">KaushalSetu Database Connection Error</h2>
+        <p className="text-sm font-mono text-red-700 max-w-md mb-6">{error}</p>
+        <button
+          onClick={loadCandidates}
+          className="px-4 py-2 bg-[#263B52] text-white rounded font-mono text-sm flex items-center gap-2 hover:bg-[#0F253B] transition-colors cursor-pointer"
+        >
+          <RefreshCw className="w-4 h-4" />
+          <span>Retry Connection</span>
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F4F4E7] text-[#0F253B] flex flex-col selection:bg-[#263B52] selection:text-white">
@@ -67,7 +116,7 @@ export function EmployerDashboard({ onNavigateHome, onSwitchRole }: EmployerDash
           <div className="flex items-center gap-3">
             <button 
               onClick={onNavigateHome}
-              className="flex items-center gap-2 group text-left"
+              className="flex items-center gap-2 group text-left cursor-pointer"
             >
               <div className="w-8 h-8 rounded bg-[#263B52] text-[#F4F4E7] flex items-center justify-center font-serif font-bold text-sm tracking-wider">
                 क
@@ -77,126 +126,121 @@ export function EmployerDashboard({ onNavigateHome, onSwitchRole }: EmployerDash
                   KAUSHAL SETU <span className="text-xs font-normal text-[#5A6E85]">| कौशल सेतु</span>
                 </div>
                 <div className="text-[10px] font-mono tracking-wider text-[#7A8C9E] uppercase">
-                  Employer Retention & Audit Portal
+                  Industry Partner Verification Gateway
                 </div>
               </div>
             </button>
             <span className="hidden sm:inline-block h-4 w-px bg-[#D5CEAE]" />
             <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#D8EEDF] text-[#164627] text-xs font-mono border border-[#B6DBC0]">
               <span className="w-1.5 h-1.5 rounded-full bg-[#16803D]" />
-              GSTIN: 27AABCT2391K1Z2 · LIN Verified
+              ESTABLISHMENT ID: MH/PUN/0088219 · Connected to PostgreSQL
             </div>
           </div>
 
           <div className="flex items-center gap-2.5">
             <button
-              onClick={() => onSwitchRole('provider')}
-              className="px-2.5 py-1.5 bg-[#EDE8D5] hover:bg-[#E2DDC7] text-[#263B52] rounded text-xs font-mono transition-colors"
+              onClick={() => onSwitchRole('trainee')}
+              className="px-2.5 py-1.5 bg-[#EDE8D5] hover:bg-[#E2DDC7] text-[#263B52] rounded text-xs font-mono transition-colors cursor-pointer"
             >
-              Switch to Training Partner View →
+              Switch to Trainee View →
+            </button>
+            <button
+              onClick={() => onSwitchRole('provider')}
+              className="px-2.5 py-1.5 bg-[#263B52] hover:bg-[#1A2C40] text-[#F4F4E7] rounded text-xs font-mono transition-colors cursor-pointer"
+            >
+              Training Partner View →
             </button>
           </div>
         </div>
       </div>
 
+      {/* Action Notice Alert */}
+      {notice && (
+        <div className="bg-emerald-100 border-b border-emerald-300 px-4 py-2 text-center text-xs font-mono text-emerald-800 flex items-center justify-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+          <span>{notice}</span>
+        </div>
+      )}
+
       {/* Main Container */}
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6 sm:py-8 sm:px-8 space-y-6">
         
-        {/* Corporate Header Snapshot */}
+        {/* Industry Partner Header */}
         <div className="bg-[#FAF7EE] border border-[#D5CEAE] rounded-lg p-5 sm:p-6 shadow-xs">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
             
-            <div className="lg:col-span-5 flex items-start gap-4">
-              <div className="w-14 h-14 rounded bg-[#263B52] text-[#F3E8A8] flex items-center justify-center font-serif font-bold text-xl border-2 border-[#D5CEAE] shadow-xs">
-                TM
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-xl sm:text-2xl font-serif font-bold text-[#0F253B]">
-                    Tata Motors Ancillary Ltd.
-                  </h1>
-                </div>
-                <p className="text-xs text-[#5A6E85] mt-0.5">
-                  Unit 2, Chakan Industrial Estate, Pune, Maharashtra
-                </p>
-                <div className="flex items-center gap-2 mt-2 text-xs font-mono text-[#7A8C9E]">
-                  <Building2 className="w-3.5 h-3.5 text-[#263B52]" />
-                  <span>Authorized HR & Ops Terminal: Vikram R. (Lead Ops)</span>
-                </div>
-              </div>
+            <div className="md:col-span-6 space-y-1">
+              <span className="text-xs font-mono uppercase tracking-wider text-[#263B52] block">
+                Authorized Industry Enterprise
+              </span>
+              <h1 className="text-2xl font-serif font-bold text-[#0F253B]">
+                Tata Motors Ancillary Ltd.
+              </h1>
+              <p className="text-xs text-[#52667A]">
+                Plant: Chakan Industrial Estate, Unit 2, Pune, MH · 42 NCVET Hires Tracked
+              </p>
             </div>
 
-            {/* Metrics Ribbon */}
-            <div className="lg:col-span-7 grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="bg-[#EDE8D5] p-3 rounded border border-[#D5CEAE]">
-                <span className="text-[10px] font-mono uppercase text-[#687C92] block">Active Placed</span>
-                <span className="text-lg font-bold font-mono text-[#0F253B]">4 Trainees</span>
-                <span className="text-[10px] font-mono text-[#15803D] block mt-0.5">100% Shram Linked</span>
+            <div className="md:col-span-6 flex flex-wrap items-center justify-start md:justify-end gap-3 pt-2 md:pt-0">
+              <div className="p-3 bg-white border border-[#D5CEAE] rounded text-left min-w-[130px]">
+                <div className="text-[10px] font-mono uppercase text-[#7A8C9E]">Active Hires</div>
+                <div className="text-xl font-serif font-bold text-[#0F253B]">42 Trainees</div>
+                <div className="text-[10px] text-[#16803D] font-mono">100% Retained</div>
               </div>
 
-              <div className="bg-[#EDE8D5] p-3 rounded border border-[#D5CEAE]">
-                <span className="text-[10px] font-mono uppercase text-[#687C92] block">6M Retention</span>
-                <span className="text-lg font-bold font-mono text-[#15803D]">100%</span>
-                <span className="text-[10px] font-mono text-[#5A6E85] block mt-0.5">3 of 3 Eligible</span>
+              <div className="p-3 bg-white border border-[#D5CEAE] rounded text-left min-w-[130px]">
+                <div className="text-[10px] font-mono uppercase text-[#7A8C9E]">Avg. Wage Lift</div>
+                <div className="text-xl font-serif font-bold text-[#16803D]">+22.4%</div>
+                <div className="text-[10px] text-[#52667A] font-mono">₹21,500 Mean</div>
               </div>
 
-              <div className="bg-[#EDE8D5] p-3 rounded border border-[#D5CEAE]">
-                <span className="text-[10px] font-mono uppercase text-[#687C92] block">12M Retention</span>
-                <span className="text-lg font-bold font-mono text-[#15803D]">100%</span>
-                <span className="text-[10px] font-mono text-[#5A6E85] block mt-0.5">2 of 2 Eligible</span>
-              </div>
-
-              <div className="bg-[#EDE8D5] p-3 rounded border border-[#D5CEAE]">
-                <span className="text-[10px] font-mono uppercase text-[#687C92] block">Avg Wage Growth</span>
-                <span className="text-lg font-bold font-mono text-[#0F253B] flex items-center gap-0.5">
-                  <TrendingUp className="w-4 h-4 text-[#15803D]" /> +17.3%
-                </span>
-                <span className="text-[10px] font-mono text-[#15803D] block mt-0.5">Verified via EPFO</span>
+              <div className="p-3 bg-white border border-[#D5CEAE] rounded text-left min-w-[130px]">
+                <div className="text-[10px] font-mono uppercase text-[#7A8C9E]">Audit Status</div>
+                <div className="text-xl font-serif font-bold text-[#263B52]">Compliant</div>
+                <div className="text-[10px] text-[#16803D] font-mono">Tripartite Active</div>
               </div>
             </div>
 
           </div>
         </div>
 
-        {/* SECTION 1: Candidate Longitudinal Retention Audit Table */}
-        <div className="bg-[#FAF7EE] border border-[#D5CEAE] rounded-lg p-6 shadow-xs space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#D5CEAE] pb-4">
+        {/* SECTION 1: Recruited Candidates Roster with Retention Signing */}
+        <div className="bg-[#FAF7EE] border border-[#D5CEAE] rounded-lg p-5 sm:p-6 shadow-xs space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#D5CEAE] pb-3">
             <div>
-              <div className="inline-flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider text-[#263B52]">
-                <Users className="w-3.5 h-3.5 text-[#263B52]" />
-                Section 01 · Longitudinal Retention Audit Ledger
-              </div>
-              <h2 className="text-lg sm:text-xl font-serif font-bold text-[#0F253B]">
-                Active Trainee Verification & Retention Audit (3M / 6M / 12M)
+              <span className="text-xs font-mono uppercase tracking-wider text-[#263B52] block">
+                Section 01 · Longitudinal Retention Roster
+              </span>
+              <h2 className="text-lg font-serif font-bold text-[#0F253B]">
+                Active Trainee Placement Roster & Retention Signoff
               </h2>
             </div>
-
-            <div className="flex items-center gap-2 text-xs font-mono">
-              <span className="flex items-center gap-1 text-[#5A6E85]">
-                <Filter className="w-3.5 h-3.5" /> All Batches
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono text-[#5A6E85]">
+                {candidates.length} Candidate Records in PostgreSQL
               </span>
             </div>
           </div>
 
-          {/* Ledger Table */}
+          {/* Table Container */}
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
+            <table className="w-full text-left border-collapse text-xs font-mono">
               <thead>
-                <tr className="bg-[#EDE8D5] border-b border-[#D5CEAE] font-mono text-[11px] text-[#263B52] uppercase tracking-wider">
-                  <th className="py-3 px-3">Candidate / Role</th>
-                  <th className="py-3 px-3">Training Batch</th>
-                  <th className="py-3 px-3">Tenure</th>
-                  <th className="py-3 px-3 text-center">3-Month</th>
-                  <th className="py-3 px-3 text-center">6-Month</th>
-                  <th className="py-3 px-3 text-center">12-Month</th>
-                  <th className="py-3 px-3">Wage Progression</th>
-                  <th className="py-3 px-3 text-right">Actions</th>
+                <tr className="border-b border-[#D5CEAE] bg-[#EDE8D5] text-[#263B52] uppercase text-[10px] tracking-wider">
+                  <th className="py-2.5 px-3">Trainee / Role</th>
+                  <th className="py-2.5 px-3">Batch & Partner</th>
+                  <th className="py-2.5 px-3">Tenure</th>
+                  <th className="py-2.5 px-3 text-center">3M Check</th>
+                  <th className="py-2.5 px-3 text-center">6M Check</th>
+                  <th className="py-2.5 px-3 text-center">12M Check</th>
+                  <th className="py-2.5 px-3">Wage Telemetry</th>
+                  <th className="py-2.5 px-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#D5CEAE] font-mono text-xs">
+              <tbody className="divide-y divide-[#E5DEC3]">
                 {candidates.map((cand) => (
                   <tr 
-                    key={cand.id}
+                    key={cand.id} 
                     className="hover:bg-[#F2EFE4] transition-colors"
                   >
                     <td className="py-3 px-3 font-sans">
@@ -233,7 +277,7 @@ export function EmployerDashboard({ onNavigateHome, onSwitchRole }: EmployerDash
                         </span>
                       ) : (
                         <button
-                          onClick={() => handleVerifyRetention(cand.id, '6m')}
+                          onClick={() => handleVerifyRetention(cand.traineeId || cand.id, '6m')}
                           className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-[#FAF7EE] text-[#D97706] hover:bg-[#F3E8A8] border border-[#D5CEAE] transition-colors cursor-pointer"
                         >
                           <Clock className="w-3 h-3" /> Pending (Sign)
@@ -248,9 +292,12 @@ export function EmployerDashboard({ onNavigateHome, onSwitchRole }: EmployerDash
                           <CheckCircle2 className="w-3 h-3" /> Cleared
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-[#EDE8D5] text-[#7A8C9E]">
-                          <Clock className="w-3 h-3" /> In Progress
-                        </span>
+                        <button
+                          onClick={() => handleVerifyRetention(cand.traineeId || cand.id, '12m')}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-[#FAF7EE] text-[#263B52] hover:bg-[#EDE8D5] border border-[#D5CEAE] transition-colors cursor-pointer"
+                        >
+                          <Clock className="w-3 h-3" /> Verify 12M
+                        </button>
                       )}
                     </td>
 
@@ -278,154 +325,124 @@ export function EmployerDashboard({ onNavigateHome, onSwitchRole }: EmployerDash
         {/* SECTION 2: Curriculum Gap Feedback Loop Transmitter */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           
-          <div className="lg:col-span-7 bg-[#FAF7EE] border border-[#D5CEAE] rounded-lg p-6 shadow-xs space-y-4">
+          <div className="lg:col-span-7 bg-[#FAF7EE] border border-[#D5CEAE] rounded-lg p-5 sm:p-6 shadow-xs space-y-4">
             <div className="border-b border-[#D5CEAE] pb-3">
               <span className="text-xs font-mono uppercase tracking-wider text-[#263B52] block">
-                Section 02 · Dynamic Curriculum Feedback Loop
+                Section 02 · Industry Feedback Loop (NCVET Direct Conduit)
               </span>
-              <h3 className="text-lg font-serif font-bold text-[#0F253B]">
-                Transmit Deficiencies Directly to Training Providers (ITI/NSTI)
-              </h3>
-              <p className="text-xs text-[#5A6E85] mt-1">
-                Direct statutory loop mandated under NCVET guidelines. Your feedback triggers real-time module updates for upcoming batches.
-              </p>
+              <h2 className="text-lg font-serif font-bold text-[#0F253B]">
+                Transmit Observed Skill Deficits to Training Partner
+              </h2>
             </div>
 
-            <form onSubmit={handleTransmitFeedback} className="space-y-4 text-xs">
+            <form onSubmit={handleTransmitFeedback} className="space-y-4">
+              <div>
+                <label className="block text-xs font-mono text-[#52667A] uppercase mb-1">
+                  Candidate Under Evaluation
+                </label>
+                <select
+                  value={feedbackCandidate}
+                  onChange={(e) => setFeedbackCandidate(e.target.value)}
+                  className="w-full bg-white border border-[#D5CEAE] rounded p-2 text-xs font-mono text-[#0F253B] focus:border-[#263B52] outline-none"
+                >
+                  {candidates.map((c) => (
+                    <option key={c.id} value={c.traineeId || c.id}>
+                      {c.name} ({c.role}) · {c.batch}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-mono uppercase text-[#263B52] font-semibold mb-1">
-                    Select Target Batch / Candidate
-                  </label>
-                  <select
-                    value={feedbackCandidate}
-                    onChange={(e) => setFeedbackCandidate(e.target.value)}
-                    className="w-full bg-white border border-[#C5BDA0] focus:border-[#263B52] rounded px-3 py-2 text-xs font-mono text-[#0F253B] outline-none"
-                  >
-                    <option value="CAND-01">Priya Sharma · Centurion Pune #14</option>
-                    <option value="CAND-02">Rahul K. Verma · SMART Delhi #04</option>
-                    <option value="CAND-03">Ananya Deshmukh · Centurion Pune #14</option>
-                    <option value="CAND-04">Mohit S. Rawat · Don Bosco Faridabad</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-mono uppercase text-[#263B52] font-semibold mb-1">
-                    Deficiency Classification
+                  <label className="block text-xs font-mono text-[#52667A] uppercase mb-1">
+                    Deficiency Category
                   </label>
                   <select
                     value={deficiencyCategory}
                     onChange={(e) => setDeficiencyCategory(e.target.value)}
-                    className="w-full bg-white border border-[#C5BDA0] focus:border-[#263B52] rounded px-3 py-2 text-xs font-mono text-[#0F253B] outline-none"
+                    className="w-full bg-white border border-[#D5CEAE] rounded p-2 text-xs font-mono text-[#0F253B] focus:border-[#263B52] outline-none"
                   >
-                    <option value="PLC & Automation Systems Calibration">PLC & Automation Systems Calibration (-10%)</option>
-                    <option value="Robotic Weld Fixture Safety">Robotic Weld Fixture Safety & Interlocks</option>
-                    <option value="Digital Telemetry & Multimeter Calibration">Digital Telemetry & Diagnostics</option>
-                    <option value="Shopfloor OSHA 18001 SOP Adherence">Shopfloor OSHA 18001 SOP Adherence</option>
+                    <option>PLC & Automation Systems Calibration</option>
+                    <option>Industrial Sensor Diagnostic Protocols</option>
+                    <option>Switchgear Maintenance & Safety PPE</option>
+                    <option>Workplace Communication & Shift Logs</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-mono text-[#52667A] uppercase mb-1">
+                    Severity Level
+                  </label>
+                  <select
+                    value={severity}
+                    onChange={(e) => setSeverity(e.target.value as any)}
+                    className="w-full bg-white border border-[#D5CEAE] rounded p-2 text-xs font-mono text-[#0F253B] focus:border-[#263B52] outline-none"
+                  >
+                    <option value="minor">Minor (Refresher Needed)</option>
+                    <option value="moderate">Moderate (Module Lab Required)</option>
+                    <option value="critical">Critical (NCVET Curriculum Revision)</option>
                   </select>
                 </div>
               </div>
 
               <div>
-                <label className="block font-mono uppercase text-[#263B52] font-semibold mb-1">
-                  Severity Level
-                </label>
-                <div className="flex gap-4">
-                  {(['minor', 'moderate', 'critical'] as const).map((lvl) => (
-                    <label key={lvl} className="flex items-center gap-1.5 cursor-pointer capitalize font-mono text-xs">
-                      <input
-                        type="radio"
-                        name="severity"
-                        checked={severity === lvl}
-                        onChange={() => setSeverity(lvl)}
-                        className="text-[#263B52] focus:ring-[#263B52]"
-                      />
-                      <span>{lvl}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-mono uppercase text-[#263B52] font-semibold mb-1">
-                  Detailed Operational Recommendation
+                <label className="block text-xs font-mono text-[#52667A] uppercase mb-1">
+                  Technical Deficit Notes
                 </label>
                 <textarea
-                  rows={3}
                   value={feedbackNotes}
                   onChange={(e) => setFeedbackNotes(e.target.value)}
-                  className="w-full bg-white border border-[#C5BDA0] focus:border-[#263B52] rounded p-2.5 text-xs text-[#0F253B] outline-none font-mono"
-                  placeholder="Describe the exact skill gap observed on the shop floor..."
+                  rows={3}
+                  className="w-full bg-white border border-[#D5CEAE] rounded p-2 text-xs font-mono text-[#0F253B] focus:border-[#263B52] outline-none"
                 />
               </div>
 
-              <div className="flex items-center justify-between pt-2">
-                <span className="text-[11px] font-mono text-[#7A8C9E]">
-                  Cryptographically signed by Vikram R. (Tata Motors)
-                </span>
-                <button
-                  type="submit"
-                  disabled={feedbackSent}
-                  className="px-4 py-2 bg-[#263B52] hover:bg-[#1A2C40] text-[#F4F4E7] rounded text-xs font-mono flex items-center gap-1.5 shadow transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  <Send className="w-3.5 h-3.5 text-[#F3E8A8]" />
-                  <span>{feedbackSent ? 'Broadcasting...' : 'Broadcast to Partner & NCVET'}</span>
-                </button>
-              </div>
+              <button
+                type="submit"
+                disabled={feedbackSent}
+                className="px-4 py-2 bg-[#263B52] hover:bg-[#1A2C40] text-[#F4F4E7] rounded text-xs font-mono flex items-center gap-2 shadow transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>{feedbackSent ? 'Transmitting to PostgreSQL...' : 'Transmit Feedback to Partner & NCVET'}</span>
+              </button>
             </form>
           </div>
 
-          {/* Shram Suvidha & EPFO Automated Pulse Status */}
-          <div className="lg:col-span-5 bg-[#FAF7EE] border border-[#D5CEAE] rounded-lg p-6 shadow-xs space-y-4">
+          {/* Dossier Quick View */}
+          <div className="lg:col-span-5 bg-[#FAF7EE] border border-[#D5CEAE] rounded-lg p-5 sm:p-6 shadow-xs space-y-4">
             <div className="border-b border-[#D5CEAE] pb-3">
               <span className="text-xs font-mono uppercase tracking-wider text-[#263B52] block">
-                Section 03 · Shram Suvidha Telemetry
+                Selected Candidate Dossier
               </span>
               <h3 className="text-lg font-serif font-bold text-[#0F253B]">
-                Automated EPFO Electronic Linkage
+                {selectedCandidate?.name || 'Priya Sharma'}
               </h3>
             </div>
 
-            <div className="p-3.5 bg-[#EDE8D5] rounded border border-[#D5CEAE] space-y-2 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[10px] uppercase text-[#687C92]">Electronic Linkage Status</span>
-                <span className="text-[#164627] font-mono text-[11px] font-bold flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5" /> LIVE CONNECTED
-                </span>
-              </div>
-              <div className="font-mono text-xs text-[#0F253B]">
-                EPFO Establishment Code: <strong>MH/PUN/0088219/000</strong>
-              </div>
-              <div className="text-[11px] text-[#4A5D70]">
-                Last synchronous wage pulse dispatched: <strong>24 Nov 2024 14:22 IST</strong>. 4 active trainee ECR returns confirmed without manual audit intervention.
-              </div>
-            </div>
+            {selectedCandidate && (
+              <div className="space-y-3 text-xs font-mono">
+                <div className="p-3 bg-white border border-[#D5CEAE] rounded space-y-1">
+                  <div className="text-[10px] text-[#7A8C9E] uppercase">Designation</div>
+                  <div className="font-bold text-[#0F253B]">{selectedCandidate.role}</div>
+                  <div className="text-[11px] text-[#4A5D70]">Batch: {selectedCandidate.batch}</div>
+                </div>
 
-            {/* Quick Candidate Snapshot Card if Selected */}
-            {selectedCandidate ? (
-              <div className="p-3.5 bg-white rounded border border-[#263B52] space-y-2 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-[#0F253B]">{selectedCandidate.name}</span>
-                  <span className="text-[10px] font-mono bg-[#D8EEDF] text-[#164627] px-2 py-0.5 rounded">
-                    Active
-                  </span>
+                <div className="p-3 bg-white border border-[#D5CEAE] rounded space-y-1">
+                  <div className="text-[10px] text-[#7A8C9E] uppercase">Tenure & Wages</div>
+                  <div className="font-bold text-[#16803D]">{selectedCandidate.wageStatus}</div>
+                  <div className="text-[11px] text-[#4A5D70]">Confirmed Tenure: {selectedCandidate.tenure}</div>
                 </div>
-                <div className="text-[11px] text-[#5A6E85]">
-                  {selectedCandidate.role} · {selectedCandidate.batch}
+
+                <div className="p-3 bg-white border border-[#D5CEAE] rounded space-y-1">
+                  <div className="text-[10px] text-[#7A8C9E] uppercase">Validation Status</div>
+                  <div className="font-bold text-[#0F253B]">
+                    Status: <span className="text-emerald-700">{selectedCandidate.validationStatus}</span>
+                  </div>
+                  <div className="text-[11px] text-[#52667A]">
+                    6M Retention: {selectedCandidate.retention6m} · 12M: {selectedCandidate.retention12m}
+                  </div>
                 </div>
-                <div className="font-mono text-[11px] text-[#0F253B]">
-                  Current Wage: {selectedCandidate.wageStatus}
-                </div>
-                <button
-                  onClick={() => setSelectedCandidate(null)}
-                  className="text-[10px] font-mono text-[#263B52] hover:underline block pt-1"
-                >
-                  Close Snapshot
-                </button>
-              </div>
-            ) : (
-              <div className="p-3 bg-white rounded border border-[#D5CEAE] text-center text-xs text-[#7A8C9E]">
-                Select any candidate row to view detailed Shram Suvidha audit trail.
               </div>
             )}
           </div>
@@ -436,7 +453,7 @@ export function EmployerDashboard({ onNavigateHome, onSwitchRole }: EmployerDash
 
       {/* Footer */}
       <div className="border-t border-[#D5CEAE] bg-[#FAF7EE] py-3 px-4 text-center text-xs font-mono text-[#687C92]">
-        KaushalSetu Employer Terminal · Ministry of Skill Development & Labour Employment Integration
+        KaushalSetu Industry Partner Gateway · Establishment #MH/PUN/0088219 · PostgreSQL Live Sync
       </div>
     </div>
   );

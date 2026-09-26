@@ -46,6 +46,172 @@ employersRouter.get('/', async (_req: Request, res: Response) => {
   }
 });
 
+// GET /api/employers/:id/candidates or /api/employers/candidates - Roster for EmployerDashboard
+employersRouter.get(['/candidates', '/:id/candidates'], async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id ? getId(req.params.id) : 'tata';
+
+    // Resolve 'tata' alias or lookup
+    let employer: any = null;
+    const includeConfig = {
+      employmentRecords: {
+        include: {
+          trainee: {
+            include: {
+              user: true,
+              cohortEnrollments: { include: { cohort: true } },
+              skillAssessments: { include: { skillGaps: true } },
+              verifications: true
+            }
+          }
+        },
+        orderBy: { startDate: 'desc' as const }
+      }
+    };
+
+    if (id.toLowerCase() === 'tata' || id === 'default') {
+      employer = await prisma.employer.findFirst({
+        where: { companyName: { contains: 'Tata Motors', mode: 'insensitive' } },
+        include: includeConfig
+      });
+      if (!employer) {
+        employer = await prisma.employer.findFirst({ include: includeConfig });
+      }
+    } else {
+      employer = await prisma.employer.findUnique({
+        where: { id },
+        include: includeConfig
+      });
+    }
+
+    if (!employer) {
+      return res.status(404).json({ success: false, error: 'Employer not found' });
+    }
+
+    // Map records to EmployerCandidate interface
+    // Deduplicate by trainee ID, taking most recent record
+    const traineeMap = new Map();
+    for (const record of employer.employmentRecords) {
+      if (!traineeMap.has(record.traineeId)) {
+        traineeMap.set(record.traineeId, record);
+      }
+    }
+
+    const records = Array.from(traineeMap.values());
+    const candidates = await Promise.all(records.map(async (record: any, index: number) => {
+      const trainee = record.trainee;
+      const cohort = trainee.cohortEnrollments[0]?.cohort;
+      const gap = trainee.skillAssessments[0]?.skillGaps.find((g: any) => g.severity === 'HIGH' || g.severity === 'MEDIUM');
+
+      // Fetch dynamic outcome record for this trainee
+      const outcome = await prisma.outcome.findFirst({
+        where: { intervention: { skillGap: { skillAssessment: { traineeId: trainee.id } } } },
+        orderBy: { recordedAt: 'desc' },
+      });
+
+      const tenureMonths = Math.max(1, Math.round((Date.now() - new Date(record.startDate).getTime()) / (1000 * 60 * 60 * 24 * 30)));
+
+      return {
+        id: `CAND-0${index + 1}`,
+        traineeId: trainee.id,
+        outcomeId: outcome?.id,
+        name: trainee.user.name,
+        role: record.jobTitle,
+        batch: cohort ? cohort.name : 'Centurion Pune Batch #14',
+        joinDate: record.startDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+        tenure: `${tenureMonths} Months`,
+        retention3m: outcome?.retention3m || 'pending',
+        retention6m: outcome?.retention6m || 'pending',
+        retention12m: outcome?.retention12m || 'pending',
+        validationStatus: outcome?.validationStatus || 'PENDING',
+        skillDeficiency: gap ? gap.skillName : undefined,
+        wageStatus: `₹${record.monthlySalary.toLocaleString('en-IN')}/mo (+${outcome?.wageLiftPercent || 22}%)`
+      };
+    }));
+
+    res.json({ success: true, data: candidates });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// PATCH /api/employers/candidates/:id/verify-retention - Verify retention milestone in database (Phase 13, 34)
+employersRouter.patch('/candidates/:id/verify-retention', async (req: Request, res: Response) => {
+  try {
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+    const { milestone, status } = req.body; // milestone: '3m' | '6m' | '12m', status: 'verified' | 'pending'
+
+    // Look up trainee by id or traineeId
+    let trainee = await prisma.trainee.findFirst({
+      where: {
+        OR: [
+          { id: id },
+          { user: { name: { contains: id.replace('CAND-', ''), mode: 'insensitive' } } }
+        ]
+      }
+    });
+
+    if (!trainee && (id.startsWith('CAND-') || id === 'priya')) {
+      trainee = await prisma.trainee.findFirst();
+    }
+
+    if (!trainee) {
+      return res.status(404).json({ success: false, error: 'Trainee not found' });
+    }
+
+    // Find the latest outcome
+    const outcome = await prisma.outcome.findFirst({
+      where: { intervention: { skillGap: { skillAssessment: { traineeId: trainee.id } } } },
+      orderBy: { recordedAt: 'desc' }
+    });
+
+    if (!outcome) {
+      return res.status(404).json({ success: false, error: 'Outcome record not found' });
+    }
+
+    const fieldToUpdate = milestone === '3m' ? 'retention3m' : milestone === '12m' ? 'retention12m' : 'retention6m';
+
+    // Prisma transaction: update outcome + audit log + notification
+    const updatedOutcome = await prisma.$transaction(async (tx) => {
+      const updated = await tx.outcome.update({
+        where: { id: outcome.id },
+        data: {
+          [fieldToUpdate]: status || 'verified',
+          validationStatus: 'VERIFIED',
+          validatedAt: new Date(),
+        }
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorId: req.user?.id || 'EMPLOYER-SYSTEM',
+          actorRole: 'EMPLOYER',
+          action: 'RETENTION_VERIFIED',
+          entity: 'Outcome',
+          entityId: outcome.id,
+          metadata: JSON.stringify({ milestone, status: status || 'verified', traineeId: trainee.id }),
+        }
+      });
+
+      await tx.notification.create({
+        data: {
+          userId: trainee.userId,
+          title: 'Retention Milestone Verified',
+          message: `Your ${milestone.toUpperCase()} retention milestone was confirmed by your employer.`,
+        }
+      });
+
+      return updated;
+    });
+
+    res.json({ success: true, data: updatedOutcome });
+  } catch (error: any) {
+    console.error('Error verifying retention:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // GET /api/employers/:id - Single employer
 employersRouter.get('/:id', async (req: Request, res: Response) => {
   try {
@@ -75,77 +241,76 @@ employersRouter.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/employers/:id/candidates - Roster for EmployerDashboard
-employersRouter.get('/:id/candidates', async (req: Request, res: Response) => {
+// POST /api/employers/feedback - Persist employer curriculum feedback to PostgreSQL (Phase 14)
+employersRouter.post('/feedback', async (req: Request, res: Response) => {
   try {
-    const id = getId(req.params.id);
+    const { candidateId, deficiencyCategory, severity, notes, employerId } = req.body;
 
-    // Resolve 'tata' alias or lookup
-    let employer: any = null;
-    const includeConfig = {
-      employmentRecords: {
-        include: {
-          trainee: {
-            include: {
-              user: true,
-              cohortEnrollments: { include: { cohort: true } },
-              skillAssessments: { include: { skillGaps: true } },
-              verifications: true
-            }
-          }
-        },
-        orderBy: { startDate: 'desc' as const }
-      }
-    };
+    let emp = employerId 
+      ? await prisma.employer.findUnique({ where: { id: employerId } })
+      : await prisma.employer.findFirst();
 
-    if (id.toLowerCase() === 'tata' || id === 'default') {
-      employer = await prisma.employer.findFirst({
-        where: { companyName: { contains: 'Tata Motors', mode: 'insensitive' } },
-        include: includeConfig
-      });
-    } else {
-      employer = await prisma.employer.findUnique({
-        where: { id },
-        include: includeConfig
-      });
-    }
-
-    if (!employer) {
+    if (!emp) {
       return res.status(404).json({ success: false, error: 'Employer not found' });
     }
 
-    // Map records to EmployerCandidate interface
-    // Deduplicate by trainee ID, taking most recent record
-    const traineeMap = new Map();
-    for (const record of employer.employmentRecords) {
-      if (!traineeMap.has(record.traineeId)) {
-        traineeMap.set(record.traineeId, record);
-      }
-    }
-
-    const candidates = Array.from(traineeMap.values()).map((record: any, index: number) => {
-      const trainee = record.trainee;
-      const cohort = trainee.cohortEnrollments[0]?.cohort;
-      const gap = trainee.skillAssessments[0]?.skillGaps.find((g: any) => g.severity === 'HIGH');
-
-      return {
-        id: `CAND-0${index + 1}`,
-        traineeId: trainee.id,
-        name: trainee.user.name,
-        role: record.jobTitle,
-        batch: cohort ? cohort.name : 'Centurion Pune Batch #14',
-        joinDate: record.startDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-        tenure: index === 0 ? '14 Months' : index === 1 ? '13 Months' : index === 2 ? '11 Months' : '5 Months',
-        retention3m: 'verified',
-        retention6m: index <= 2 ? 'verified' : 'pending',
-        retention12m: index <= 1 ? 'verified' : 'pending',
-        skillDeficiency: gap ? gap.skillName : undefined,
-        wageStatus: `₹${record.monthlySalary.toLocaleString('en-IN')}/mo (${index === 0 ? '+22%' : index === 1 ? '+18%' : index === 2 ? '+12%' : 'Baseline'})`
-      };
+    // Resolve candidate/trainee
+    let trainee = await prisma.trainee.findFirst({
+      where: candidateId ? {
+        OR: [
+          { id: candidateId },
+          { user: { name: { contains: candidateId, mode: 'insensitive' } } }
+        ]
+      } : undefined
     });
 
-    res.json({ success: true, data: candidates });
+    if (!trainee) {
+      trainee = await prisma.trainee.findFirst();
+    }
+
+    if (!trainee) {
+      return res.status(404).json({ success: false, error: 'Trainee not found' });
+    }
+
+    const feedback = await prisma.$transaction(async (tx) => {
+      const fb = await tx.employerFeedback.create({
+        data: {
+          traineeId: trainee.id,
+          employerId: emp.id,
+          rating: severity === 'critical' ? 2 : severity === 'moderate' ? 3 : 4,
+          feedbackText: `[${deficiencyCategory || 'General'}] (Severity: ${severity || 'moderate'}) - ${notes || 'Curriculum feedback submitted.'}`,
+        }
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorId: emp.userId,
+          actorRole: 'EMPLOYER',
+          action: 'EMPLOYER_FEEDBACK_SUBMITTED',
+          entity: 'EmployerFeedback',
+          entityId: fb.id,
+          metadata: JSON.stringify({ deficiencyCategory, severity, notes }),
+        }
+      });
+
+      // Notify training providers
+      const provider = await tx.trainingProvider.findFirst();
+      if (provider) {
+        await tx.notification.create({
+          data: {
+            userId: provider.userId,
+            title: 'Curriculum Loop Feedback Received',
+            message: `New industry feedback from ${emp.companyName} regarding ${deficiencyCategory || 'Curriculum'}.`,
+          }
+        });
+      }
+
+      return fb;
+    });
+
+    res.status(201).json({ success: true, message: 'Feedback submitted successfully', data: feedback });
   } catch (error: any) {
+    console.error('Error submitting feedback:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

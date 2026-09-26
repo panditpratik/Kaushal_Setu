@@ -11,14 +11,14 @@ import {
   Users, 
   Briefcase, 
   GraduationCap, 
-  Sparkles,
-  ChevronRight,
-  Database,
-  Layers,
-  ArrowUpRight
+  Sparkles, 
+  ChevronRight, 
+  Database, 
+  Layers, 
+  ArrowUpRight 
 } from 'lucide-react';
 
-export const FEATURED_TRAINEE_ID = 'cmugpipt8000duyu8eus0jdzn';
+export const FEATURED_TRAINEE_ID = 'priya';
 
 interface LandingPageProps {
   onNavigate: (view: AppView, role?: StakeholderRole) => void;
@@ -26,13 +26,13 @@ interface LandingPageProps {
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
   const { data: featuredDossier, loading: featuredLoading, error: featuredError } = useTraineeDossier(FEATURED_TRAINEE_ID);
-  const { data: outcomes, loading: outcomesLoading, error: _outcomesError } = useOutcomesSummary();
+  const { data: outcomes, loading: outcomesLoading } = useOutcomesSummary();
 
-  const totalTraineesDisplay = outcomes?.totalTrainees != null ? outcomes.totalTrainees.toLocaleString() : '5';
-  const employmentRateDisplay = outcomes?.employmentRate != null ? `${Math.round(outcomes.employmentRate * 100)}%` : '60%';
+  const totalTraineesDisplay = outcomes?.totalTrainees != null ? outcomes.totalTrainees.toLocaleString() : (outcomesLoading ? '...' : '0');
+  const employmentRateDisplay = outcomes?.employmentRate != null ? `${Math.round(outcomes.employmentRate * 100)}%` : (outcomesLoading ? '...' : '0%');
   const avgWageLiftDisplay = outcomes?.averageWageLiftPercent != null 
     ? `+${outcomes.averageWageLiftPercent}%` 
-    : (outcomes ? '—' : '+22.7%');
+    : (outcomesLoading ? '...' : '—');
   return (
     <div className="flex flex-col w-full selection:bg-[#263B52] selection:text-white overflow-x-hidden">
       
@@ -463,7 +463,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                 </p>
                 <div className="p-3 bg-white border border-[#D5CEAE] rounded text-[11px] font-mono text-[#47617C] mb-4">
                   <span className="text-[#0F253B] font-bold block">Sovereign Registry</span>
-                  <span>1.48M Records · Zero Comp</span>
+                  <span>{totalTraineesDisplay} Verified Records · Live PostgreSQL Telemetry</span>
                 </div>
               </div>
               <button

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { AppView, StakeholderRole } from './types';
 import { Header } from './components/Header';
 import { LandingPage } from './components/LandingPage';
@@ -8,10 +8,31 @@ import { TraineeDashboard } from './components/TraineeDashboard';
 import { EmployerDashboard } from './components/EmployerDashboard';
 import { ProviderDashboard } from './components/ProviderDashboard';
 import { GovernmentDashboard } from './components/GovernmentDashboard';
+import { authService, type AuthUser } from './lib/api';
 
 export function App() {
   const [currentView, setCurrentView] = useState<AppView>('landing');
   const [currentRole, setCurrentRole] = useState<StakeholderRole | null>(null);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+
+  // Restore authenticated session on mount (Phase 19: GET /api/auth/me)
+  useEffect(() => {
+    authService.getMe().then((user) => {
+      if (user) {
+        setCurrentUser(user);
+        const roleMap: Record<string, { role: StakeholderRole; view: AppView }> = {
+          TRAINEE: { role: 'trainee', view: 'trainee-dashboard' },
+          EMPLOYER: { role: 'employer', view: 'employer-dashboard' },
+          TRAINING_PROVIDER: { role: 'provider', view: 'provider-dashboard' },
+          GOVERNMENT: { role: 'government', view: 'government-dashboard' },
+        };
+        const mapped = roleMap[user.role];
+        if (mapped) {
+          setCurrentRole(mapped.role);
+        }
+      }
+    });
+  }, []);
 
   const handleNavigate = (view: AppView, role?: StakeholderRole) => {
     setCurrentView(view);
@@ -34,8 +55,17 @@ export function App() {
   const handleLogin = (role: StakeholderRole, targetView: AppView) => {
     setCurrentRole(role);
     setCurrentView(targetView);
+    authService.getMe().then((u) => setCurrentUser(u));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  const handleLogout = useCallback(async () => {
+    await authService.logout();
+    setCurrentUser(null);
+    setCurrentRole(null);
+    setCurrentView('landing');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
 
   const handleSwitchRole = (roleStr: string) => {
     const role = roleStr as StakeholderRole;
@@ -79,7 +109,9 @@ export function App() {
           <Header 
             currentView={currentView} 
             currentRole={currentRole} 
+            currentUser={currentUser}
             onNavigate={handleNavigate} 
+            onLogout={handleLogout}
           />
           <main className="flex-1">
             <LandingPage onNavigate={handleNavigate} />
