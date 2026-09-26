@@ -17,6 +17,41 @@ export function App() {
   const [currentView, setCurrentView] = useState<AppView>('landing');
   const [currentRole, setCurrentRole] = useState<StakeholderRole | null>(null);
 
+  // Tab persistence for Trainee Portal (?tab=trajectory | ?tab=skills | ?tab=ledger)
+  const [traineeTab, setTraineeTab] = useState<'trajectory' | 'skills' | 'ledger'>(() => {
+    if (typeof window === 'undefined') return 'trajectory';
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab');
+    if (tab === 'skills' || tab === 'ledger') return tab;
+    return 'trajectory';
+  });
+
+  // Popstate listener for browser back/forward buttons
+  useEffect(() => {
+    const handlePopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get('tab');
+      if (tab === 'skills' || tab === 'ledger') {
+        setTraineeTab(tab);
+      } else if (tab === 'trajectory') {
+        setTraineeTab('trajectory');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const handleSelectTraineeTab = useCallback((tab: 'trajectory' | 'skills' | 'ledger') => {
+    setTraineeTab(tab);
+    if (currentView !== 'trainee-dashboard') {
+      setCurrentView('trainee-dashboard');
+      setCurrentRole('trainee');
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', tab);
+    window.history.pushState({ tab }, '', url.toString());
+  }, [currentView]);
+
   // Sync state when Supabase user profile loads or changes
   useEffect(() => {
     if (profile && stakeholderRole) {
@@ -125,7 +160,9 @@ export function App() {
           currentView={currentView} 
           currentRole={currentRole} 
           currentUser={currentUser}
+          activeTraineeTab={traineeTab}
           onNavigate={handleNavigate} 
+          onSelectTraineeTab={handleSelectTraineeTab}
           onLogout={handleLogout}
         />
       )}
@@ -139,6 +176,8 @@ export function App() {
           <TraineeDashboard 
             onNavigateHome={() => handleNavigate('landing')} 
             onSwitchRole={handleSwitchRole} 
+            activeTab={traineeTab}
+            onTabChange={handleSelectTraineeTab}
           />
         ) : currentView === 'employer-dashboard' ? (
           <EmployerDashboard 

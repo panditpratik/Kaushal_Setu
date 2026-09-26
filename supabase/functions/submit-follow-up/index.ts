@@ -84,36 +84,43 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
       let followUpRecord: any = null;
 
-      // Updating existing follow-up
+      // Updating existing or creating milestone follow-up
       if (followUpId) {
         // Verify ownership/scoping
         const existingRes = await client.query(
           'SELECT f.*, t.user_id as trainee_user_id FROM public.follow_ups f JOIN public.trainees t ON t.id = f.trainee_id WHERE f.id = $1',
           [followUpId]
         );
-        if (existingRes.rows.length === 0) {
-          const notFoundErr: any = new Error('Follow-up record not found');
-          notFoundErr.status = 404;
-          throw notFoundErr;
-        }
+        if (existingRes.rows.length > 0) {
+          const existing = existingRes.rows[0];
+          if (user.role === 'TRAINEE' && existing.trainee_user_id !== user.id) {
+            const forbidErr: any = new Error('Access denied: cannot update another user follow-up');
+            forbidErr.status = 403;
+            throw forbidErr;
+          }
 
-        const existing = existingRes.rows[0];
-        if (user.role === 'TRAINEE' && existing.trainee_user_id !== user.id) {
-          const forbidErr: any = new Error('Access denied: cannot update another user follow-up');
-          forbidErr.status = 403;
-          throw forbidErr;
+          const updateRes = await client.query(
+            `UPDATE public.follow_ups
+             SET status = coalesce($1, status),
+                 notes = coalesce($2, notes)
+             WHERE id = $3
+             RETURNING *`,
+            [status, notes, followUpId]
+          );
+          followUpRecord = updateRes.rows[0];
+          resolvedTraineeId = followUpRecord.trainee_id;
+        } else {
+          // If followUpId was not yet in DB, create new verified record
+          const safeId = followUpId.startsWith('flw_') ? followUpId : ('flw_' + Math.random().toString(36).substring(2, 10));
+          const insertRes = await client.query(
+            `INSERT INTO public.follow_ups (
+               id, trainee_id, follow_up_date, status, notes, created_at
+             ) VALUES ($1, $2, now(), $3, $4, now())
+             RETURNING *`,
+            [safeId, resolvedTraineeId, status, notes || 'Longitudinal follow-up survey verified.']
+          );
+          followUpRecord = insertRes.rows[0];
         }
-
-        const updateRes = await client.query(
-          `UPDATE public.follow_ups
-           SET status = coalesce($1, status),
-               notes = coalesce($2, notes)
-           WHERE id = $3
-           RETURNING *`,
-          [status, notes, followUpId]
-        );
-        followUpRecord = updateRes.rows[0];
-        resolvedTraineeId = followUpRecord.trainee_id;
       } else {
         // Creating new follow-up
         const newId = 'flw_' + Math.random().toString(36).substring(2, 12);

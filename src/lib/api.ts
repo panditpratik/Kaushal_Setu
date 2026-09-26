@@ -63,6 +63,20 @@ export interface TraineeDossier {
     monthlySalary: number;
     tenureMonths: number | null;
   } | null;
+  employmentRecords?: {
+    id: string;
+    jobTitle: string;
+    employerName: string;
+    monthlySalary: number;
+    startDate: string;
+    endDate: string | null;
+  }[];
+  followUps?: {
+    id: string;
+    scheduledAt: string;
+    status: string;
+    notes: string;
+  }[];
   trajectoryVelocity: { wageLiftPercent: number | null; tenureMonths: number | null };
   stages: DossierStage[];
 }
@@ -305,10 +319,10 @@ export const traineeService = {
   // Write operation via Supabase Edge Function: submit-follow-up
   submitFollowUp: async (
     id: string,
-    payload: { followUpId?: string; status?: string; notes?: string }
+    payload: { followUpId?: string; status?: string; notes?: string; actionType?: string; skillCategory?: string }
   ) => {
     const { data, error } = await supabase.functions.invoke('submit-follow-up', {
-      body: { candidateId: id, ...payload },
+      body: { traineeId: id, candidateId: id, ...payload },
     });
 
     if (error) {
@@ -319,9 +333,15 @@ export const traineeService = {
   },
 
   requestAssessment: async (id: string, payload: { skillCategory?: string; notes?: string }) => {
-    // Uses submit-follow-up edge function with status Assessment Requested
     const { data, error } = await supabase.functions.invoke('submit-follow-up', {
-      body: { candidateId: id, status: 'Assessment Requested', notes: payload.notes || payload.skillCategory },
+      body: {
+        traineeId: id,
+        candidateId: id,
+        actionType: 'ASSESSMENT_REQUEST',
+        status: 'Assessment Requested',
+        skillCategory: payload.skillCategory || 'Industrial Automation Level 5',
+        notes: payload.notes || `Candidate requested evaluation for ${payload.skillCategory || 'Industrial Automation'}`,
+      },
     });
 
     if (error) {
@@ -329,6 +349,19 @@ export const traineeService = {
     }
 
     return { success: true, data };
+  },
+
+  getFollowUps: async (traineeId: string) => {
+    const { data, error } = await supabase
+      .from('follow_ups')
+      .select('*')
+      .eq('trainee_id', traineeId)
+      .order('follow_up_date', { ascending: false });
+
+    if (error) {
+      return [];
+    }
+    return data || [];
   },
 };
 
