@@ -5,6 +5,8 @@ import { Header } from './components/Header';
 import { LandingPage } from './components/LandingPage';
 import { Footer } from './components/Footer';
 import { LoginPage } from './components/LoginPage';
+import { AuthCallback } from './components/AuthCallback';
+import { PasswordResetPage } from './components/PasswordResetPage';
 import { TraineeDashboard } from './components/TraineeDashboard';
 import { EmployerDashboard } from './components/EmployerDashboard';
 import { ProviderDashboard } from './components/ProviderDashboard';
@@ -16,9 +18,23 @@ export function App() {
   const { user, profile, stakeholderRole, defaultView, loading, signOut } = useAuth();
   const [currentView, setCurrentView] = useState<AppView>(() => {
     if (typeof window === 'undefined') return 'landing';
+    const path = window.location.pathname.replace(/\/$/, '');
+    if (path === '/auth/callback') return 'auth-callback';
+    if (path === '/auth/reset-password') return 'reset-password';
+    if (path === '/login') return 'login';
+
     const params = new URLSearchParams(window.location.search);
     const v = params.get('view') as AppView | null;
-    if (v && ['landing', 'login', 'trainee-dashboard', 'employer-dashboard', 'provider-dashboard', 'government-dashboard'].includes(v)) {
+    if (v && [
+      'landing', 
+      'login', 
+      'auth-callback', 
+      'reset-password', 
+      'trainee-dashboard', 
+      'employer-dashboard', 
+      'provider-dashboard', 
+      'government-dashboard'
+    ].includes(v)) {
       return v;
     }
     return 'landing';
@@ -36,6 +52,17 @@ export function App() {
 
   const syncViewToUrl = useCallback((view: AppView) => {
     const url = new URL(window.location.href);
+    if (view === 'auth-callback') {
+      window.history.pushState({ view }, '', '/auth/callback');
+      return;
+    }
+    if (view === 'reset-password') {
+      window.history.pushState({ view }, '', '/auth/reset-password');
+      return;
+    }
+    if (url.pathname.startsWith('/auth/')) {
+      url.pathname = '/';
+    }
     if (view === 'landing') {
       url.searchParams.delete('view');
     } else {
@@ -47,13 +74,32 @@ export function App() {
   // Popstate listener for browser back/forward buttons
   useEffect(() => {
     const handlePopState = () => {
+      const path = window.location.pathname.replace(/\/$/, '');
+      if (path === '/auth/callback') {
+        setCurrentView('auth-callback');
+        return;
+      }
+      if (path === '/auth/reset-password') {
+        setCurrentView('reset-password');
+        return;
+      }
+
       const params = new URLSearchParams(window.location.search);
       const tab = params.get('tab');
       if (tab === 'skills' || tab === 'ledger' || tab === 'trajectory') {
         setTraineeTab(tab);
       }
       const viewParam = params.get('view') as AppView | null;
-      if (viewParam && ['landing', 'login', 'trainee-dashboard', 'employer-dashboard', 'provider-dashboard', 'government-dashboard'].includes(viewParam)) {
+      if (viewParam && [
+        'landing', 
+        'login', 
+        'auth-callback', 
+        'reset-password', 
+        'trainee-dashboard', 
+        'employer-dashboard', 
+        'provider-dashboard', 
+        'government-dashboard'
+      ].includes(viewParam)) {
         setCurrentView(viewParam);
       } else {
         setCurrentView('landing');
@@ -214,7 +260,7 @@ export function App() {
 
   return (
     <div className="min-h-screen bg-[#F4F4E7] text-[#0F253B] font-sans flex flex-col selection:bg-[#263B52] selection:text-white">
-      {currentView !== 'login' && (
+      {currentView !== 'login' && currentView !== 'auth-callback' && currentView !== 'reset-password' && (
         <Header 
           currentView={currentView} 
           currentRole={currentRole} 
@@ -230,6 +276,15 @@ export function App() {
           <LoginPage 
             onLogin={handleLogin} 
             onNavigateHome={() => handleNavigate('landing')} 
+          />
+        ) : currentView === 'auth-callback' ? (
+          <AuthCallback 
+            onSuccess={handleLogin} 
+            onFailure={() => handleNavigate('login')} 
+          />
+        ) : currentView === 'reset-password' ? (
+          <PasswordResetPage 
+            onNavigateToLogin={() => handleNavigate('login')} 
           />
         ) : currentView === 'trainee-dashboard' ? (
           <TraineeDashboard 

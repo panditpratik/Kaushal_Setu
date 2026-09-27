@@ -28,8 +28,20 @@ interface AuthContextType {
   loading: boolean;
   error: string | null;
   signIn: (email: string, password: string) => Promise<{ user: User; profile: UserProfile }>;
+  signUp: (
+    email: string,
+    password: string,
+    fullName: string,
+    requestedRole: 'TRAINEE' | 'TRAINING_PROVIDER'
+  ) => Promise<{ user: User | null; session: Session | null; confirmationRequired: boolean }>;
+  signInWithOtp: (email: string) => Promise<void>;
+  verifyOtp: (email: string, token: string) => Promise<{ user: User; profile: UserProfile | null }>;
+  resetPasswordForEmail: (email: string) => Promise<void>;
+  updatePassword: (newPassword: string) => Promise<void>;
+  signInWithOAuth: (provider: 'google') => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<UserProfile | null>;
+  resolveAndBootstrapProfile: (u?: User | null) => Promise<UserProfile | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -141,6 +153,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return p;
   };
 
+  const resolveAndBootstrapProfile = async (u?: User | null): Promise<UserProfile | null> => {
+    const targetUser = u || user;
+    if (!targetUser) return null;
+    const p = await fetchProfileForUser(targetUser.id);
+    if (p) setProfile(p);
+    return p;
+  };
+
   // Initialize session and register auth listener
   useEffect(() => {
     let mounted = true;
@@ -167,14 +187,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     initAuth();
 
-    // Listen to Supabase auth events (SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED, etc.)
+    // Listen to Supabase auth events (SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED, USER_UPDATED, PASSWORD_RECOVERY)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event: AuthChangeEvent, newSession: Session | null) => {
         if (!mounted) return;
         setSession(newSession);
         setUser(newSession?.user ?? null);
 
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED') {
           if (newSession?.user) {
             const p = await fetchProfileForUser(newSession.user.id);
             if (mounted) setProfile(p);
@@ -204,7 +224,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (signInErr || !data.user) {
-        throw new Error(signInErr?.message || 'Invalid credentials or login failed');
+        throw new Error(formatAuthError(signInErr || new Error('Invalid email or password')));
       }
 
       setUser(data.user);
@@ -223,6 +243,147 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw err;
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Sign Up using Supabase GoTrue Auth with role and metadata
+  const signUp = async (
+    email: string,
+    password: string,
+    fullName: string,
+    requestedRole: 'TRAINEE' | 'TRAINING_PROVIDER'
+  ): Promise<{ user: User | null; session: Session | null; confirmationRequired: boolean }> => {
+    setError(null);
+    setLoading(true);
+    try {
+      const { data, error: signUpErr } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+            requested_role: requestedRole,
+          },
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+
+      if (signUpErr) {
+        throw new Error(formatAuthError(signUpErr));
+      }
+
+      if (data.session && data.user) {
+        setUser(data.user);
+        setSession(data.session);
+        const resolvedProfile = await fetchProfileForUser(data.user.id);
+        if (resolvedProfile) setProfile(resolvedProfile);
+      }
+
+      const confirmationRequired = !data.session;
+      return { user: data.user, session: data.session, confirmationRequired };
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Sign In with Magic Link / Email OTP
+  const signInWithOtp = async (email: string): Promise<void> => {
+    setError(null);
+    setLoading(true);
+    try {
+      const { error: otpErr } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+      if (otpErr) throw new Error(formatAuthError(otpErr));
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Verify Email OTP Code
+  const verifyOtp = async (email: string, token: string): Promise<{ user: User; profile: UserProfile | null }> => {
+    setError(null);
+    setLoading(true);
+    try {
+      const { data, error: verifyErr } = await supabase.auth.verifyOtp({
+        email,
+        token,
+        type: 'email',
+      });
+      if (verifyErr || !data.user) {
+        throw new Error(formatAuthError(verifyErr || new Error('Invalid verification code')));
+      }
+
+      setUser(data.user);
+      setSession(data.session);
+      const p = await fetchProfileForUser(data.user.id);
+      setProfile(p);
+      return { user: data.user, profile: p };
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Password Recovery Request
+  const resetPasswordForEmail = async (email: string): Promise<void> => {
+    setError(null);
+    setLoading(true);
+    try {
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/reset-password`,
+      });
+      if (resetErr) throw new Error(formatAuthError(resetErr));
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Update Password for recovery session
+  const updatePassword = async (newPassword: string): Promise<void> => {
+    setError(null);
+    setLoading(true);
+    try {
+      const { error: updateErr } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+      if (updateErr) throw new Error(formatAuthError(updateErr));
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Continue with Google OAuth
+  const signInWithOAuth = async (provider: 'google'): Promise<void> => {
+    setError(null);
+    try {
+      const { error: oauthErr } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+      if (oauthErr) throw new Error(formatAuthError(oauthErr));
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
     }
   };
 
@@ -249,8 +410,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loading,
       error,
       signIn,
+      signUp,
+      signInWithOtp,
+      verifyOtp,
+      resetPasswordForEmail,
+      updatePassword,
+      signInWithOAuth,
       signOut,
       refreshProfile,
+      resolveAndBootstrapProfile,
     }),
     [user, session, profile, stakeholderRole, defaultView, loading, error]
   );
@@ -264,4 +432,40 @@ export function useAuth() {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
+}
+
+// User-friendly error message transformer conforming to Requirement 18
+export function formatAuthError(err: any): string {
+  if (!err) return 'An unexpected authentication error occurred.';
+  const msg = (err.message || String(err)).toLowerCase();
+  const code = (err.code || '').toLowerCase();
+
+  if (code === 'invalid_credentials' || msg.includes('invalid login credentials') || msg.includes('invalid credentials')) {
+    return 'Email or password is incorrect. Please verify your credentials and try again.';
+  }
+  if (msg.includes('email not confirmed') || code === 'email_not_confirmed') {
+    return 'Please confirm your email address before signing in. Check your inbox for the confirmation link.';
+  }
+  if (code === 'over_email_send_rate_limit' || msg.includes('rate limit')) {
+    return 'Too many requests. Please wait a moment and try again.';
+  }
+  if (msg.includes('email address invalid') || msg.includes('unable to validate email')) {
+    return 'Please enter a valid, active email address.';
+  }
+  if (msg.includes('user already registered') || msg.includes('already exists')) {
+    return 'An account with this email address already exists. Please sign in instead.';
+  }
+  if (msg.includes('password') && (msg.includes('short') || msg.includes('least 6'))) {
+    return 'Password must be at least 6 characters long.';
+  }
+  if (msg.includes('expired') || msg.includes('token has expired')) {
+    return 'This sign-in link or verification code has expired. Please request a new one.';
+  }
+  if (msg.includes('provider is not enabled') || msg.includes('unsupported provider')) {
+    return 'Google Sign-In is pending provider credentials in Supabase Cloud settings.';
+  }
+  if (msg.includes('network') || msg.includes('failed to fetch')) {
+    return 'Unable to connect to KaushalSetu. Please check your internet connection.';
+  }
+  return err.message || 'Authentication error. Please try again.';
 }

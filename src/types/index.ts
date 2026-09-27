@@ -3,6 +3,8 @@ export type StakeholderRole = 'trainee' | 'employer' | 'provider' | 'government'
 export type AppView = 
   | 'landing' 
   | 'login' 
+  | 'auth-callback'
+  | 'reset-password'
   | 'trainee-dashboard' 
   | 'provider-dashboard' 
   | 'employer-dashboard' 
