@@ -29,11 +29,11 @@ export function FollowUpSurveyModal({
   onSuccess,
 }: FollowUpSurveyModalProps) {
   const [employmentStatus, setEmploymentStatus] = useState('Employed');
-  const [monthlySalary, setMonthlySalary] = useState<number>(currentSalary || 21500);
+  const [monthlySalary, setMonthlySalary] = useState<number>(currentSalary ?? 0);
   const [retentionStatus, setRetentionStatus] = useState('Retained in same role');
   const [skillRelevance, setSkillRelevance] = useState('High');
   const [roleRelevance, setRoleRelevance] = useState('Directly aligned with vocational training');
-  const [notes, setNotes] = useState('Validating active employment status for periodic longitudinal review.');
+  const [notes, setNotes] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

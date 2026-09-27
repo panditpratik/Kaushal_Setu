@@ -1,6 +1,6 @@
 // src/App.tsx
 import { useState, useEffect, useCallback } from 'react';
-import type { AppView, StakeholderRole } from './types';
+import type { AppView, StakeholderRole, TraineeTab } from './types';
 import { Header } from './components/Header';
 import { LandingPage } from './components/LandingPage';
 import { Footer } from './components/Footer';
@@ -41,13 +41,17 @@ export function App() {
   });
   const [currentRole, setCurrentRole] = useState<StakeholderRole | null>(null);
 
-  // Tab persistence for Trainee Portal (?tab=trajectory | ?tab=skills | ?tab=ledger)
-  const [traineeTab, setTraineeTab] = useState<'trajectory' | 'skills' | 'ledger'>(() => {
-    if (typeof window === 'undefined') return 'trajectory';
+  // Tab persistence for Trainee Portal (?tab=overview | training | outcomes | journey | followups | skills)
+  const [traineeTab, setTraineeTab] = useState<TraineeTab>(() => {
+    if (typeof window === 'undefined') return 'overview';
     const params = new URLSearchParams(window.location.search);
-    const tab = params.get('tab');
-    if (tab === 'skills' || tab === 'ledger') return tab;
-    return 'trajectory';
+    const tab = params.get('tab') as TraineeTab | null;
+    if (tab && ['overview', 'training', 'outcomes', 'journey', 'followups', 'skills'].includes(tab)) {
+      return tab;
+    }
+    if ((tab as any) === 'trajectory') return 'journey';
+    if ((tab as any) === 'ledger') return 'followups';
+    return 'overview';
   });
 
   const syncViewToUrl = useCallback((view: AppView) => {
@@ -85,9 +89,13 @@ export function App() {
       }
 
       const params = new URLSearchParams(window.location.search);
-      const tab = params.get('tab');
-      if (tab === 'skills' || tab === 'ledger' || tab === 'trajectory') {
-        setTraineeTab(tab);
+      const tabParam = params.get('tab') as TraineeTab | null;
+      if (tabParam && ['overview', 'training', 'outcomes', 'journey', 'followups', 'skills'].includes(tabParam)) {
+        setTraineeTab(tabParam);
+      } else if ((tabParam as any) === 'trajectory') {
+        setTraineeTab('journey');
+      } else if ((tabParam as any) === 'ledger') {
+        setTraineeTab('followups');
       }
       const viewParam = params.get('view') as AppView | null;
       if (viewParam && [
@@ -109,7 +117,7 @@ export function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  const handleSelectTraineeTab = useCallback((tab: 'trajectory' | 'skills' | 'ledger') => {
+  const handleSelectTraineeTab = useCallback((tab: TraineeTab) => {
     setTraineeTab(tab);
     if (currentView !== 'trainee-dashboard') {
       setCurrentView('trainee-dashboard');

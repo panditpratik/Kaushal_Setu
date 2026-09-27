@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { AppView, StakeholderRole } from '../types';
+import type { AppView, StakeholderRole, TraineeTab } from '../types';
 import logoSvg from '../assets/logo.svg';
 import iconSvg from '../assets/icon.svg';
 import { ArrowRight, LogOut, ChevronDown, Bell, Check, Menu, X, ShieldCheck } from 'lucide-react';
@@ -10,9 +10,9 @@ interface HeaderProps {
   currentView: AppView;
   currentRole: StakeholderRole | null;
   currentUser?: AuthUser | null;
-  activeTraineeTab?: 'trajectory' | 'skills' | 'ledger';
+  activeTraineeTab?: TraineeTab;
   onNavigate: (view: AppView, role?: StakeholderRole) => void;
-  onSelectTraineeTab?: (tab: 'trajectory' | 'skills' | 'ledger') => void;
+  onSelectTraineeTab?: (tab: TraineeTab) => void;
   onLogout?: () => void;
 }
 
@@ -20,7 +20,7 @@ export const Header: React.FC<HeaderProps> = ({
   currentView, 
   currentRole, 
   currentUser, 
-  activeTraineeTab = 'trajectory',
+  activeTraineeTab = 'overview',
   onNavigate, 
   onSelectTraineeTab,
   onLogout 
@@ -77,56 +77,57 @@ export const Header: React.FC<HeaderProps> = ({
   const unreadCount = notifications.filter(n => !n.read).length;
   const isTraineeContext = currentRole === 'trainee' || currentView === 'trainee-dashboard';
 
-  // Navigation Items for Trainee Portal
+  // Navigation Items for Trainee Portal (Overview, Training, Outcomes, Journey, Follow-ups, Skill Gaps)
   const traineeNavItems = [
     {
       id: 'overview',
       label: 'Overview',
       onClick: () => {
-        onNavigate('landing');
+        onNavigate('trainee-dashboard', 'trainee');
+        onSelectTraineeTab?.('overview');
         setMobileMenuOpen(false);
       },
-      isActive: currentView === 'landing',
+      isActive: currentView === 'trainee-dashboard' && activeTraineeTab === 'overview',
     },
     {
       id: 'training',
       label: 'Training',
       onClick: () => {
         onNavigate('trainee-dashboard', 'trainee');
-        onSelectTraineeTab?.('trajectory');
+        onSelectTraineeTab?.('training');
         setMobileMenuOpen(false);
       },
-      isActive: currentView === 'trainee-dashboard' && activeTraineeTab === 'trajectory',
+      isActive: currentView === 'trainee-dashboard' && activeTraineeTab === 'training',
     },
     {
       id: 'outcomes',
       label: 'Outcomes',
       onClick: () => {
         onNavigate('trainee-dashboard', 'trainee');
-        onSelectTraineeTab?.('trajectory');
+        onSelectTraineeTab?.('outcomes');
         setMobileMenuOpen(false);
       },
-      isActive: currentView === 'trainee-dashboard' && activeTraineeTab === 'trajectory',
+      isActive: currentView === 'trainee-dashboard' && activeTraineeTab === 'outcomes',
     },
     {
       id: 'journey',
       label: 'Journey',
       onClick: () => {
         onNavigate('trainee-dashboard', 'trainee');
-        onSelectTraineeTab?.('trajectory');
+        onSelectTraineeTab?.('journey');
         setMobileMenuOpen(false);
       },
-      isActive: currentView === 'trainee-dashboard' && activeTraineeTab === 'trajectory',
+      isActive: currentView === 'trainee-dashboard' && activeTraineeTab === 'journey',
     },
     {
-      id: 'follow-ups',
+      id: 'followups',
       label: 'Follow-ups',
       onClick: () => {
         onNavigate('trainee-dashboard', 'trainee');
-        onSelectTraineeTab?.('ledger');
+        onSelectTraineeTab?.('followups');
         setMobileMenuOpen(false);
       },
-      isActive: currentView === 'trainee-dashboard' && activeTraineeTab === 'ledger',
+      isActive: currentView === 'trainee-dashboard' && activeTraineeTab === 'followups',
     },
     {
       id: 'skills',

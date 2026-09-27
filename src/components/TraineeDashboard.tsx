@@ -1,91 +1,69 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { TraineeProfile, TrajectoryMilestone } from '../types';
-import { traineeService, type TraineeDossier } from '../lib/api';
+import type { TraineeTab } from '../types';
+import { traineeService, type TraineeDossier, supabase } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
-import { OutcomeVerificationModal } from './OutcomeVerificationModal';
 import { TraineeProfileModal } from './TraineeProfileModal';
 import { FollowUpSurveyModal } from './FollowUpSurveyModal';
-import logoSvg from '../assets/logo.svg';
 import { 
   ShieldCheck, 
   Building2, 
   Calendar, 
   CheckCircle2, 
   AlertTriangle, 
-  ArrowUpRight, 
   RefreshCw,
   Award,
   TrendingUp,
   Briefcase,
   User,
   GraduationCap,
-  MapPin,
-  BookOpen
+  BookOpen,
+  ClipboardList,
+  Compass,
+  Zap,
+  FileCheck,
+  ChevronRight,
+  Clock
 } from 'lucide-react';
 
-interface TraineeSkillItem {
-  id: string;
-  name: string;
-  score: number;
-  benchmark: number;
-  gap: number;
-  status: 'exceeds' | 'at' | 'below';
-  statusLabel: string;
-  priority: string;
-  recommendedAction: string;
-}
-
-interface ActionLedgerRecord {
-  id: string;
-  date: string;
-  timestamp: number;
-  category: string;
-  title: string;
-  description: string;
-  status: string;
-  organization: string;
-  actionText?: string;
-  actionType?: 'follow_up' | 'modal' | 'none';
-}
-
 interface TraineeDashboardProps {
-  onNavigateHome: () => void;
-  onSwitchRole: (role: string) => void;
-  activeTab?: 'trajectory' | 'skills' | 'ledger';
-  onTabChange?: (tab: 'trajectory' | 'skills' | 'ledger') => void;
+  onNavigateHome?: () => void;
+  onSwitchRole?: (role: string) => void;
+  activeTab?: TraineeTab;
+  onTabChange?: (tab: TraineeTab) => void;
 }
 
 export function TraineeDashboard({ 
-  onNavigateHome, 
+  onNavigateHome: _onNavigateHome, 
   activeTab: controlledTab, 
   onTabChange 
 }: TraineeDashboardProps) {
   const { profile: authProfile } = useAuth();
   const [dossier, setDossier] = useState<TraineeDossier | null>(null);
-  const [profile, setProfile] = useState<TraineeProfile | null>(null);
-  const [milestones, setMilestones] = useState<TrajectoryMilestone[]>([]);
-  const [skills, setSkills] = useState<TraineeSkillItem[]>([]);
-  const [ledgerRecords, setLedgerRecords] = useState<ActionLedgerRecord[]>([]);
-  const [selectedMilestone, setSelectedMilestone] = useState<TrajectoryMilestone | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Modals
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isSurveyModalOpen, setIsSurveyModalOpen] = useState(false);
   const [selectedFollowUpId, setSelectedFollowUpId] = useState<string>('');
-  
-  // Tab state: single source of truth inside TraineeDashboard with two-way sync
-  const [activeTab, setActiveTab] = useState<'trajectory' | 'skills' | 'ledger'>(() => {
+
+  // Tab synchronization (overview | training | outcomes | journey | followups | skills)
+  const [activeTab, setActiveTab] = useState<TraineeTab>(() => {
     if (controlledTab) return controlledTab;
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      const t = params.get('tab');
-      if (t === 'skills' || t === 'ledger' || t === 'trajectory') return t;
+      const t = params.get('tab') as TraineeTab | null;
+      if (t && ['overview', 'training', 'outcomes', 'journey', 'followups', 'skills'].includes(t)) {
+        return t;
+      }
+      if ((t as any) === 'trajectory') return 'journey';
+      if ((t as any) === 'ledger') return 'followups';
     }
-    return 'trajectory';
+    return 'overview';
   });
 
   const lastControlledTabRef = useRef(controlledTab);
-
-  // Keep in sync if parent controlledTab changes externally (e.g. from top Header navigation)
   useEffect(() => {
     if (controlledTab && controlledTab !== lastControlledTabRef.current) {
       lastControlledTabRef.current = controlledTab;
@@ -93,7 +71,7 @@ export function TraineeDashboard({
     }
   }, [controlledTab]);
 
-  const handleTabClick = (tab: 'trajectory' | 'skills' | 'ledger') => {
+  const handleTabClick = (tab: TraineeTab) => {
     lastControlledTabRef.current = tab;
     setActiveTab(tab);
     if (onTabChange) {
@@ -108,269 +86,69 @@ export function TraineeDashboard({
     }
   };
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [actionNotice, setActionNotice] = useState<string | null>(null);
-  const [isSubmittingAction, setIsSubmittingAction] = useState(false);
+  // Outcome Form State (Inside Outcomes Tab)
+  const [outcomeType, setOutcomeType] = useState<'EMPLOYED' | 'SELF_EMPLOYED' | 'APPRENTICESHIP' | 'NOT_EMPLOYED'>('EMPLOYED');
+  const [jobTitle, setJobTitle] = useState('');
+  const [employerName, setEmployerName] = useState('');
+  const [employmentType, setEmploymentType] = useState('REGULAR');
+  const [monthlySalary, setMonthlySalary] = useState('');
+  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState('');
+  const [district, setDistrict] = useState('');
+  const [state, setState] = useState('');
+  const [selfCategory, setSelfCategory] = useState('');
+  const [selfIncome, setSelfIncome] = useState('');
+  const [appEmployer, setAppEmployer] = useState('');
+  const [appTrade, setAppTrade] = useState('');
+  const [unemploymentReason, setUnemploymentReason] = useState('Still seeking employment');
+  const [unemploymentNotes, setUnemploymentNotes] = useState('');
+  const [outcomeNotes, setOutcomeNotes] = useState('');
 
-  const loadTraineeData = useCallback(async () => {
-    setLoading(true);
+  const [isSubmittingOutcome, setIsSubmittingOutcome] = useState(false);
+  const [outcomeSuccessMessage, setOutcomeSuccessMessage] = useState<string | null>(null);
+  const [outcomeErrorMessage, setOutcomeErrorMessage] = useState<string | null>(null);
+
+  // Skill Re-assessment request state
+  const [requestingSkillId, setRequestingSkillId] = useState<string | null>(null);
+  const [skillActionNotice, setSkillActionNotice] = useState<string | null>(null);
+
+  // Load Real Data from Supabase
+  const loadTraineeData = useCallback(async (isSilent = false) => {
+    if (!isSilent) setLoading(true);
+    else setRefreshing(true);
     setError(null);
     try {
       const targetId = authProfile?.traineeId || 'me';
       const data = await traineeService.getDossier(targetId);
       setDossier(data);
 
-      const cert = data.certifications[0];
-      const employment = data.activeEmployment;
-      const velocity = data.trajectoryVelocity;
+      // Pre-fill outcome form with current database records
+      if (data.trainee) {
+        const t = data.trainee;
+        const currentStatus = (t.employmentStatus || 'NOT_EMPLOYED').toUpperCase();
+        if (currentStatus === 'SELF_EMPLOYED') setOutcomeType('SELF_EMPLOYED');
+        else if (currentStatus === 'APPRENTICESHIP') setOutcomeType('APPRENTICESHIP');
+        else if (currentStatus === 'NOT_EMPLOYED' || currentStatus === 'SEEKING_EMPLOYMENT') setOutcomeType('NOT_EMPLOYED');
+        else setOutcomeType('EMPLOYED');
 
-      const mappedProfile: TraineeProfile = {
-        id: data.trainee.id,
-        name: data.trainee.name,
-        course: cert ? cert.course : 'Industrial Electrician & Automation Diagnostics',
-        level: cert ? cert.name : 'NCVET Level 4 Certified',
-        trainingPartner: data.cohort?.trainingProvider || 'Centurion Skill Academy Pune',
-        partnerDistrict: data.trainee.district ? `${data.trainee.district}, ${data.trainee.state || 'Maharashtra'}` : 'Pune Metro Region, Maharashtra',
-        currentRole: employment?.jobTitle || data.trainee.currentOccupation || 'Sr. Industrial Electrician (Diagnostic Lead)',
-        company: employment?.employerName || 'Tata Motors Ancillary Ltd.',
-        companyLocation: 'Chakan Industrial Estate, Pune, MH',
-        tenureMonths: employment?.tenureMonths || velocity.tenureMonths || 14,
-        currentSalary: employment?.monthlySalary || 21500,
-        baselineSalary: 17600,
-        wageDeltaPercent: velocity.wageLiftPercent || 22.1,
-        epfoId: data.trainee.epfoId || 'MH/PUN/0088219/000/0192',
-        supervisorName: 'Vikram Rajput',
-        supervisorRole: 'Lead Operations & Maintenance',
-        aadhaarVerified: data.trainee.aadhaarLinked,
-        threePartyVerified: true,
-        skillsCount: {
-          total: 4,
-          verified: 3,
-        },
-      };
-
-      setProfile(mappedProfile);
-
-      // TAB 1: Career Trajectory Milestones
-      const dynamicMilestones: TrajectoryMilestone[] = [
-        {
-          step: '01',
-          date: 'Oct 2023',
-          title: 'Training Completed',
-          description: `${data.cohort?.name || 'PMKVY 4.0 Centurion'}, 420 hrs practical workshop verified`,
-          type: 'completed',
-          coordinate: { x: 50, y: 173 },
-        },
-        {
-          step: '02',
-          date: 'Dec 2023',
-          title: 'Certification',
-          description: cert ? `${cert.name} (${cert.certificateNumber})` : 'Level 4 Industrial Electrician credential with 89.2% score',
-          type: 'completed',
-          coordinate: { x: 210, y: 155 },
-        },
-        {
-          step: '03',
-          date: 'Jan 2024',
-          title: 'First Placement',
-          description: `${employment?.employerName || 'Tata Motors Ancillary Ltd.'} at baseline ₹17,600/month`,
-          type: 'completed',
-          coordinate: { x: 390, y: 132 },
-        },
-        {
-          step: '04',
-          date: 'Jul 2024',
-          title: 'Role Escalation',
-          description: 'Diagnostic Tech designation & Shift B maintenance co-lead',
-          type: 'completed',
-          coordinate: { x: 570, y: 105 },
-        },
-        {
-          step: '05',
-          date: 'Nov 2024',
-          title: 'Wage Enhancement',
-          description: `+${velocity.wageLiftPercent || 22}% logged (₹${employment?.monthlySalary?.toLocaleString() || '21,500'}/mo payroll verified)`,
-          type: 'current',
-          coordinate: { x: 750, y: 74 },
-        },
-        {
-          step: '06',
-          date: 'Present / Next',
-          title: '18M Horizon',
-          description: 'Scheduled audit due in 4 months; promotion to Level 5 Senior Specialist',
-          type: 'projected',
-          coordinate: { x: 920, y: 35 },
-        },
-      ];
-
-      setMilestones(dynamicMilestones);
-      setSelectedMilestone(dynamicMilestones[4]);
-
-      // TAB 2: Deduplicated Real Skill Gaps & Competency Framework
-      const uniqueSkillsMap = new Map<string, TraineeSkillItem>();
-      if (data.stages && data.stages.length > 0) {
-        for (const stage of data.stages) {
-          const skillName = stage.skillGap?.skillName;
-          if (!skillName || uniqueSkillsMap.has(skillName)) continue;
-
-          const rawScore = stage.assessment?.overallScore;
-          const score = rawScore ? Math.round(rawScore) : 87;
-          const benchmark = 80;
-          const gap = score - benchmark;
-          const status: 'exceeds' | 'at' | 'below' = gap > 0 ? 'exceeds' : gap === 0 ? 'at' : 'below';
-          const statusLabel = gap > 0 ? 'Exceeds Benchmark' : gap === 0 ? 'At Benchmark' : 'Below Benchmark';
-
-          uniqueSkillsMap.set(skillName, {
-            id: stage.skillGap.id,
-            name: skillName,
-            score,
-            benchmark,
-            gap,
-            status,
-            statusLabel,
-            priority: stage.skillGap.severity === 'HIGH' ? 'High Priority' : 'Standard Priority',
-            recommendedAction: stage.intervention?.type || 'Level 5 Master Diagnostics Calibration',
-          });
-        }
+        setDistrict(t.district || '');
+        setState(t.state || '');
+        setJobTitle(data.activeEmployment?.jobTitle || t.currentOccupation || '');
+        setEmployerName(data.activeEmployment?.employerName || '');
+        setEmploymentType(data.activeEmployment?.employmentType || 'REGULAR');
+        setMonthlySalary(data.activeEmployment?.monthlySalary ? String(data.activeEmployment.monthlySalary) : '');
+        setSelfCategory(t.selfEmploymentCategory || '');
+        setSelfIncome(t.selfEmploymentIncome ? String(t.selfEmploymentIncome) : '');
+        setAppEmployer(t.apprenticeshipEmployer || '');
+        setUnemploymentReason(t.unemploymentReason || 'Still seeking employment');
+        setUnemploymentNotes(t.unemploymentNotes || '');
       }
-
-      if (uniqueSkillsMap.size === 0) {
-        const domainSkills = [
-          { name: 'PLC Troubleshooting & Industrial Calibration', score: 86, benchmark: 80, priority: 'High Priority', action: 'Level 5 Master Diagnostics Calibration' },
-          { name: 'Industrial Control Wiring & Power Distribution', score: 78, benchmark: 80, priority: 'Standard Priority', action: 'Bridge Practical Lab - Safety Protocols' },
-          { name: 'Sensor Calibration & Automation Diagnostics', score: 91, benchmark: 80, priority: 'Standard Priority', action: 'Certified Specialist Endorsement' },
-          { name: 'Preventive Maintenance & Safety Lockout', score: 84, benchmark: 80, priority: 'Standard Priority', action: 'Standard Industry Compliance' },
-        ];
-        domainSkills.forEach((s, idx) => {
-          const gap = s.score - s.benchmark;
-          uniqueSkillsMap.set(s.name, {
-            id: `skill-dom-${idx}`,
-            name: s.name,
-            score: s.score,
-            benchmark: s.benchmark,
-            gap,
-            status: gap > 0 ? 'exceeds' : gap === 0 ? 'at' : 'below',
-            statusLabel: gap > 0 ? 'Exceeds Benchmark' : gap === 0 ? 'At Benchmark' : 'Below Benchmark',
-            priority: s.priority,
-            recommendedAction: s.action,
-          });
-        });
-      }
-
-      setSkills(Array.from(uniqueSkillsMap.values()));
-
-      // TAB 3: Action Ledger - Consolidated chronological events from PostgreSQL
-      const ledgerEvents: ActionLedgerRecord[] = [];
-
-      // 1. Follow-up items from PostgreSQL public.follow_ups
-      if (data.followUps && data.followUps.length > 0) {
-        for (const fu of data.followUps) {
-          const dateObj = new Date(fu.scheduledAt);
-          const formattedDate = !isNaN(dateObj.getTime())
-            ? dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-            : 'Scheduled Date';
-
-          const isCompleted = fu.status.toLowerCase().includes('completed') || fu.status.toLowerCase().includes('done');
-          const isAssessmentReq = fu.status.toLowerCase().includes('assessment');
-
-          ledgerEvents.push({
-            id: fu.id,
-            date: formattedDate,
-            timestamp: !isNaN(dateObj.getTime()) ? dateObj.getTime() : 0,
-            category: isAssessmentReq ? 'Skill Assessment' : 'Longitudinal Follow-up',
-            title: isAssessmentReq ? 'Level 5 Re-Assessment Request' : `Milestone Review (${fu.status})`,
-            description: fu.notes || 'Follow-up event logged in KaushalSetu National Skill Registry.',
-            status: isCompleted ? 'Completed' : fu.status,
-            organization: mappedProfile.company,
-            actionText: isCompleted ? 'Completed ✓' : 'Confirm / Complete Survey',
-            actionType: isCompleted ? 'none' : 'follow_up',
-          });
-        }
-      }
-
-      // 2. Wage Lift / Outcome events
-      if (data.stages && data.stages.length > 0) {
-        const uniqueOutcomes = new Set<string>();
-        for (const stage of data.stages) {
-          if (stage.outcome?.id && !uniqueOutcomes.has(stage.outcome.id)) {
-            uniqueOutcomes.add(stage.outcome.id);
-            const dateObj = new Date(stage.outcome.recordedAt);
-            const formattedDate = !isNaN(dateObj.getTime())
-              ? dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-              : 'Nov 2024';
-
-            ledgerEvents.push({
-              id: stage.outcome.id,
-              date: formattedDate,
-              timestamp: !isNaN(dateObj.getTime()) ? dateObj.getTime() : 0,
-              category: 'Wage Enhancement',
-              title: `Wage Lift (+${stage.outcome.wageLiftPercent || mappedProfile.wageDeltaPercent}%)`,
-              description: `Wage enhancement outcome verified against employer payroll records at ${stage.outcome.employerName || mappedProfile.company}.`,
-              status: 'Validated',
-              organization: stage.outcome.employerName || mappedProfile.company,
-              actionText: 'Confirm / Update',
-              actionType: 'modal',
-            });
-          }
-        }
-      }
-
-      // 3. Certifications
-      if (data.certifications && data.certifications.length > 0) {
-        for (const c of data.certifications) {
-          const dateObj = new Date(c.issuedAt);
-          const formattedDate = !isNaN(dateObj.getTime())
-            ? dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-            : 'Dec 2023';
-
-          ledgerEvents.push({
-            id: `cert-${c.certificateNumber || c.name}`,
-            date: formattedDate,
-            timestamp: !isNaN(dateObj.getTime()) ? dateObj.getTime() : 0,
-            category: 'Certification',
-            title: c.name,
-            description: `Credential verified with Certificate No: ${c.certificateNumber || 'NCVET/2026/09122'}. Course: ${c.course}`,
-            status: 'Verified',
-            organization: 'National Council for Vocational Education and Training (NCVET)',
-            actionText: 'Verified ✓',
-            actionType: 'none',
-          });
-        }
-      }
-
-      // 4. Employment Records
-      if (data.employmentRecords && data.employmentRecords.length > 0) {
-        for (const er of data.employmentRecords) {
-          const dateObj = new Date(er.startDate);
-          const formattedDate = !isNaN(dateObj.getTime())
-            ? dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-            : 'Jan 2024';
-
-          ledgerEvents.push({
-            id: er.id,
-            date: formattedDate,
-            timestamp: !isNaN(dateObj.getTime()) ? dateObj.getTime() : 0,
-            category: 'Employment Validation',
-            title: `Placement: ${er.jobTitle}`,
-            description: `Active employment confirmed at ${er.employerName} with monthly compensation of ₹${er.monthlySalary.toLocaleString('en-IN')}.`,
-            status: 'Validated',
-            organization: er.employerName,
-            actionText: 'View Details',
-            actionType: 'none',
-          });
-        }
-      }
-
-      // Sort chronological events descending
-      ledgerEvents.sort((a, b) => b.timestamp - a.timestamp);
-      setLedgerRecords(ledgerEvents);
-
     } catch (err: any) {
-      console.error('Failed to load trainee data:', err);
-      setError(err.message || 'Unable to connect to KaushalSetu services. Please check backend status.');
+      console.error('Failed to load real trainee dossier:', err);
+      setError(err.message || 'Unable to retrieve trainee outcome records from database.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [authProfile?.traineeId]);
 
@@ -378,852 +156,1613 @@ export function TraineeDashboard({
     loadTraineeData();
   }, [loadTraineeData]);
 
-  const handleVerificationSuccess = async (newSalary: number, uan: string) => {
-    if (!profile) return;
-    const delta = parseFloat((((newSalary - profile.baselineSalary) / profile.baselineSalary) * 100).toFixed(1));
+  // Real Supabase Realtime Subscription
+  useEffect(() => {
+    const traineeDbId = authProfile?.traineeId;
+    if (!traineeDbId) return;
 
-    try {
-      await traineeService.updateOutcome(profile.id, {
-        outcomeType: 'EMPLOYED',
-        monthlySalary: newSalary,
-        wageLiftPercent: delta,
-        employerName: profile.company,
-        notes: `UAN/EPFO Reference: ${uan}`,
-      });
+    // Listen on postgres_changes for trainees, employment_records, and follow_ups
+    const channel = supabase
+      .channel(`trainee-realtime-${traineeDbId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'trainees', filter: `id=eq.${traineeDbId}` },
+        () => {
+          loadTraineeData(true);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'employment_records', filter: `trainee_id=eq.${traineeDbId}` },
+        () => {
+          loadTraineeData(true);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'follow_ups', filter: `trainee_id=eq.${traineeDbId}` },
+        () => {
+          loadTraineeData(true);
+        }
+      )
+      .subscribe();
 
-      setActionNotice(`Outcome successfully updated: ₹${newSalary.toLocaleString('en-IN')}/mo (+${delta}%) recorded in database.`);
-      await loadTraineeData();
-      setTimeout(() => setActionNotice(null), 4000);
-    } catch (err: any) {
-      setActionNotice(`Failed to save outcome update: ${err.message}`);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [authProfile?.traineeId, loadTraineeData]);
+
+  // Handle Outcome Submission
+  const handleOutcomeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmittingOutcome(true);
+    setOutcomeSuccessMessage(null);
+    setOutcomeErrorMessage(null);
+
+    const parsedSalary = monthlySalary.trim() !== '' ? parseFloat(monthlySalary) : undefined;
+    if (parsedSalary !== undefined && isNaN(parsedSalary)) {
+      setOutcomeErrorMessage('Salary/Wage must be a valid numeric amount.');
+      setIsSubmittingOutcome(false);
+      return;
     }
-  };
 
-  const handleRequestAssessment = async (skillCategory?: string) => {
-    if (!profile || isSubmittingAction) return;
-    setIsSubmittingAction(true);
     try {
-      const category = skillCategory || 'Industrial Automation Level 5';
-      await traineeService.requestAssessment(profile.id, {
-        skillCategory: category,
-        notes: `Candidate requested Level 5 diagnostic calibration evaluation for ${category}.`,
+      const targetId = authProfile?.traineeId || dossier?.trainee.id;
+      await traineeService.recordEmploymentUpdate({
+        trainee_id: targetId,
+        status: outcomeType,
+        job_title: outcomeType === 'SELF_EMPLOYED' ? selfCategory : (outcomeType === 'APPRENTICESHIP' ? appTrade : jobTitle),
+        employer_name: outcomeType === 'SELF_EMPLOYED' ? 'Independent / Self-Employed' : (outcomeType === 'APPRENTICESHIP' ? appEmployer : employerName),
+        employment_type: employmentType,
+        monthly_salary: outcomeType === 'SELF_EMPLOYED' ? (selfIncome ? parseFloat(selfIncome) : parsedSalary) : parsedSalary,
+        start_date: startDate || new Date().toISOString(),
+        end_date: endDate || undefined,
+        district: district || undefined,
+        state: state || undefined,
+        is_self_employed: outcomeType === 'SELF_EMPLOYED',
+        self_employment_category: outcomeType === 'SELF_EMPLOYED' ? selfCategory : undefined,
+        is_apprenticeship: outcomeType === 'APPRENTICESHIP',
+        apprenticeship_employer: outcomeType === 'APPRENTICESHIP' ? appEmployer : undefined,
+        unemployment_reason: outcomeType === 'NOT_EMPLOYED' ? unemploymentReason : undefined,
+        unemployment_notes: outcomeType === 'NOT_EMPLOYED' ? unemploymentNotes : undefined,
+        notes: outcomeNotes || `Outcome updated to ${outcomeType} by trainee.`
       });
-      setActionNotice(`Assessment request for ${category} submitted to Centurion Skill Academy and logged in PostgreSQL.`);
-      await loadTraineeData();
-      setTimeout(() => setActionNotice(null), 4000);
+
+      setOutcomeSuccessMessage(`Outcome successfully updated to ${outcomeType.replace('_', ' ')}.`);
+      await loadTraineeData(true);
+      setTimeout(() => setOutcomeSuccessMessage(null), 5000);
     } catch (err: any) {
-      setActionNotice(`Request failed: ${err.message}`);
+      console.error('Failed to submit outcome update:', err);
+      setOutcomeErrorMessage(err.message || 'Unable to update outcome. Please verify details and try again.');
     } finally {
-      setIsSubmittingAction(false);
+      setIsSubmittingOutcome(false);
     }
   };
 
-  if (loading && !profile) {
+  // Handle Assessment Request
+  const handleRequestAssessment = async (skillId: string, skillName: string) => {
+    setRequestingSkillId(skillId);
+    setSkillActionNotice(null);
+    try {
+      const targetId = authProfile?.traineeId || dossier?.trainee.id || '';
+      await traineeService.requestAssessment(targetId, {
+        skillCategory: skillName,
+        notes: `Trainee requested re-assessment for ${skillName} (ID: ${skillId})`
+      });
+      setSkillActionNotice(`Re-assessment successfully scheduled for ${skillName}.`);
+      await loadTraineeData(true);
+      setTimeout(() => setSkillActionNotice(null), 4000);
+    } catch (err: any) {
+      console.error('Failed to request assessment:', err);
+      setSkillActionNotice(`Assessment request: ${err.message || 'Unable to submit request.'}`);
+    } finally {
+      setRequestingSkillId(null);
+    }
+  };
+
+  // Profile completion calculation from real columns
+  const calculateProfileCompletion = () => {
+    if (!dossier?.trainee) return 0;
+    const t = dossier.trainee;
+    const checks = [
+      Boolean(t.name),
+      Boolean(t.contactNumber),
+      Boolean(t.education),
+      Boolean(t.district),
+      Boolean(t.state),
+      Boolean(t.currentOccupation || t.employmentStatus),
+      Boolean(t.consentStatus === 'CONSENTED'),
+      Boolean(dossier.certifications && dossier.certifications.length > 0),
+    ];
+    const completed = checks.filter(Boolean).length;
+    return Math.round((completed / checks.length) * 100);
+  };
+
+  // Follow-ups counts
+  const pendingFollowUps = (dossier?.followUps || []).filter(
+    (f) => !f.status.toLowerCase().includes('completed') && !f.status.toLowerCase().includes('done')
+  );
+  const completedFollowUps = (dossier?.followUps || []).filter(
+    (f) => f.status.toLowerCase().includes('completed') || f.status.toLowerCase().includes('done')
+  );
+
+  // Loading Screen
+  if (loading) {
     return (
-      <div className="min-h-screen bg-[#FAF9F5] text-[#0F253B] flex flex-col items-center justify-center p-8">
-        <div className="w-12 h-12 rounded-full border-4 border-[#263B52] border-t-transparent animate-spin mb-4" />
-        <p className="font-mono text-sm text-[#47617C]">Loading Trainee Longitudinal Dossier from PostgreSQL...</p>
+      <div className="w-full min-h-[60vh] flex flex-col items-center justify-center p-8 text-[#18324A]">
+        <div className="w-10 h-10 border-3 border-[#18324A] border-t-transparent rounded-full animate-spin mb-4" />
+        <span className="font-mono text-xs tracking-wider uppercase font-bold text-[#18324A]">
+          Loading Verified Trainee Outcome Dossier...
+        </span>
+        <span className="text-[11px] font-mono text-[#5E6B75] mt-1">
+          Querying Supabase Cloud PostgreSQL & Telemetry Nodes
+        </span>
       </div>
     );
   }
 
-  if (error || !profile) {
+  // Error Screen
+  if (error || !dossier) {
     return (
-      <div className="min-h-screen bg-[#FAF9F5] text-[#0F253B] flex flex-col items-center justify-center p-8 text-center">
-        <AlertTriangle className="w-12 h-12 text-red-600 mb-4" />
-        <h2 className="text-xl font-bold mb-2">KaushalSetu Database Connection Error</h2>
-        <p className="text-sm font-mono text-red-700 max-w-md mb-6">{error || 'Trainee profile not found.'}</p>
+      <div className="w-full max-w-4xl mx-auto my-12 p-6 bg-white border border-red-200 rounded-lg text-center shadow-xs">
+        <AlertTriangle className="w-10 h-10 text-red-600 mx-auto mb-3" />
+        <h2 className="text-base font-bold font-serif text-[#16212B]">Trainee Record Inaccessible</h2>
+        <p className="text-xs font-mono text-[#5E6B75] mt-1 mb-4">{error || 'No trainee profile matched your authenticated session.'}</p>
         <button
-          onClick={loadTraineeData}
-          className="px-4 py-2 bg-[#263B52] text-white rounded font-mono text-sm flex items-center gap-2 hover:bg-[#0F253B] transition-colors cursor-pointer"
+          onClick={() => loadTraineeData()}
+          className="px-4 py-2 bg-[#18324A] text-white text-xs font-mono rounded hover:bg-[#263B52] transition cursor-pointer"
         >
-          <RefreshCw className="w-4 h-4" />
-          <span>Retry Connection</span>
+          Retry Connection
         </button>
       </div>
     );
   }
 
-  const isConsented = dossier?.trainee?.consentStatus === 'CONSENTED';
+  const trainee = dossier.trainee;
+  const trainingHistory = dossier.trainingHistory || [];
+  const certifications = dossier.certifications || [];
+  const activeEmployment = dossier.activeEmployment;
+  const salaryProgression = dossier.salaryProgression;
+  const skillGaps = dossier.skillGaps || [];
+  const journeyEvents = dossier.journey || [];
 
   return (
-    <div className="min-h-screen bg-[#FAF9F5] text-[#0F253B] flex flex-col selection:bg-[#263B52] selection:text-white">
+    <div className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 md:px-8 xl:px-12 py-6 space-y-6">
       
-      {/* Top Secondary Bar */}
-      <div className="border-b border-[#D5CEAE] bg-[#FAF7EE] px-4 py-2.5 sm:px-8 shadow-xs">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 sm:gap-4">
+      {/* ========================================================================= */}
+      {/* 1. Trainee Header Bar (Institutional, trustworthy, light theme)            */}
+      {/* ========================================================================= */}
+      <div className="bg-[#FAF7EE] border border-[#DCE3E7] rounded-lg p-5 shadow-2xs">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           
-          {/* Logo Asset */}
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={onNavigateHome}
-              className="flex items-center group cursor-pointer focus:outline-none"
-              title="Kaushal Setu Homepage"
-            >
-              <img 
-                src={logoSvg} 
-                alt="Kaushal Setu कौशल सेतु" 
-                className="h-8 sm:h-9 w-auto object-contain" 
-              />
-            </button>
-            <span className="hidden sm:inline-block h-5 w-px bg-[#D5CEAE]" />
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="w-12 h-12 rounded-lg bg-[#18324A] text-white flex items-center justify-center font-serif text-lg font-bold shrink-0">
+              {trainee.name ? trainee.name.charAt(0).toUpperCase() : 'T'}
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-xl sm:text-2xl font-serif font-bold text-[#16212B] tracking-tight">
+                  {trainee.name || 'Verified Trainee'}
+                </h1>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-[#E7F5F4] text-[#087F8C] border border-[#B6DBC0]">
+                  NCVET Trainee ID: {trainee.id}
+                </span>
+                {trainee.consentStatus === 'CONSENTED' ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-50 text-emerald-800 border border-emerald-200">
+                    <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                    DPDP Consent Active
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-amber-50 text-amber-800 border border-amber-200">
+                    <Clock className="w-3 h-3 text-amber-600" />
+                    Consent Pending
+                  </span>
+                )}
+              </div>
+              <p className="text-xs font-mono text-[#5E6B75] mt-1 flex flex-wrap items-center gap-3">
+                <span>{trainee.education || 'Vocational Candidate'}</span>
+                <span>•</span>
+                <span>{trainee.district ? `${trainee.district}, ${trainee.state || 'India'}` : 'Location unrecorded'}</span>
+                <span>•</span>
+                <span>Current Status: <strong className="text-[#16212B] uppercase">{trainee.employmentStatus || 'NOT_EMPLOYED'}</strong></span>
+              </p>
+            </div>
           </div>
 
-          {/* Trainee Credential Badge */}
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            <div className="text-xs font-mono text-[#47617C] flex items-center gap-1.5">
-              <span className="font-bold text-[#0F253B]">Trainee</span>
-              <span>·</span>
-              <span>Longitudinal Outcome Passport</span>
-            </div>
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-[#D8EEDF] text-[#164627] text-[11px] font-mono border border-[#B6DBC0]">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#16803D]" />
-              NCVET Passport ID: <strong className="font-bold">{profile.id}</strong>
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2.5 ml-auto sm:ml-0">
+          <div className="flex items-center gap-2 self-start md:self-auto shrink-0">
             <button
               onClick={() => setIsProfileModalOpen(true)}
-              className="px-3 py-1.5 bg-[#EDE8D5] hover:bg-[#E2DDC7] text-[#263B52] rounded text-xs font-mono flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer border border-[#D5CEAE]"
+              className="px-3 py-1.5 bg-white border border-[#DCE3E7] hover:border-[#18324A] text-[#18324A] text-xs font-mono font-medium rounded transition flex items-center gap-1.5 cursor-pointer"
             >
-              <User className="w-3.5 h-3.5 text-[#263B52]" />
+              <User className="w-3.5 h-3.5" />
               <span>Edit Profile & Consent</span>
             </button>
             <button
-              onClick={() => setIsModalOpen(true)}
-              className="px-3 py-1.5 bg-[#263B52] hover:bg-[#1A2C40] text-[#F4F4E7] rounded text-xs font-mono flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              onClick={() => loadTraineeData(true)}
+              disabled={refreshing}
+              className="p-2 bg-white border border-[#DCE3E7] hover:bg-slate-50 text-[#5E6B75] rounded transition cursor-pointer"
+              title="Refresh live data from database"
             >
-              <ShieldCheck className="w-3.5 h-3.5 text-[#F3E8A8]" />
-              <span>Update Outcome & Wage</span>
+              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-[#087F8C]' : ''}`} />
             </button>
           </div>
 
         </div>
+
+        {/* Tab Sub-Navigation (Accessible directly on mobile and quick-switching) */}
+        <div className="mt-5 pt-3 border-t border-[#DCE3E7] flex items-center gap-1.5 overflow-x-auto text-xs font-mono scrollbar-none">
+          {[
+            { id: 'overview', label: 'Overview', icon: Compass },
+            { id: 'training', label: 'Training & Certs', icon: GraduationCap },
+            { id: 'outcomes', label: 'Outcomes Management', icon: Briefcase },
+            { id: 'journey', label: 'Trajectory & Journey', icon: TrendingUp },
+            { id: 'followups', label: `Follow-ups (${pendingFollowUps.length})`, icon: ClipboardList },
+            { id: 'skills', label: `Skill Gaps (${skillGaps.length})`, icon: Zap },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => handleTabClick(tab.id as TraineeTab)}
+                className={`px-3 py-1.5 rounded transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                  isActive
+                    ? 'bg-[#18324A] text-white font-bold shadow-2xs'
+                    : 'text-[#5E6B75] hover:text-[#16212B] hover:bg-[#EDE8D5]'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Action Notification Banner */}
-      {actionNotice && (
-        <div className="bg-emerald-100 border-b border-emerald-300 px-4 py-2.5 text-center text-xs font-mono text-emerald-800 flex items-center justify-center gap-2 animate-in fade-in duration-200">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>{actionNotice}</span>
-        </div>
-      )}
+      {/* ========================================================================= */}
+      {/* TAB 1: OVERVIEW WORKSPACE                                                 */}
+      {/* ========================================================================= */}
+      {activeTab === 'overview' && (
+        <div className="space-y-6 animate-in fade-in duration-150">
+          
+          {/* Welcome Banner */}
+          <div className="p-5 bg-white border border-[#DCE3E7] rounded-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <span className="text-[11px] font-mono uppercase tracking-wider text-[#087F8C] font-semibold">
+                National Longitudinal Outcome Registry
+              </span>
+              <h2 className="text-lg font-serif font-bold text-[#16212B] mt-0.5">
+                Welcome back, {trainee.name || 'Trainee'}
+              </h2>
+              <p className="text-xs font-mono text-[#5E6B75] mt-1">
+                Your longitudinal journey from skills to sustainable career.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleTabClick('outcomes')}
+                className="px-4 py-2 bg-[#087F8C] hover:bg-[#076C77] text-white text-xs font-mono font-medium rounded transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              >
+                <Briefcase className="w-3.5 h-3.5" />
+                <span>Update Outcome Status</span>
+              </button>
+            </div>
+          </div>
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6 sm:py-8 sm:px-8 space-y-6">
-        
-        {/* Persistent Trainee Identity Header Card */}
-        <div className="bg-[#FAF7EE] border border-[#D5CEAE] rounded-lg p-5 sm:p-6 shadow-xs">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+          {/* Real Metrics Grid (Database-Backed) */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             
-            {/* Beneficiary Avatar & Title */}
-            <div className="lg:col-span-4 flex items-start gap-4">
-              <div className="w-16 h-16 rounded-full bg-[#263B52] text-[#F4F4E7] flex items-center justify-center font-serif text-2xl font-bold border-2 border-[#D5CEAE] shadow-inner shrink-0">
-                {profile.name.charAt(0)}
+            {/* 1. Profile Completion */}
+            <div className="bg-white border border-[#DCE3E7] rounded-lg p-3.5 text-center flex flex-col justify-between">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-[#5E6B75]">Profile</span>
+              <div className="my-2">
+                <span className="text-2xl font-bold font-mono text-[#18324A]">
+                  {calculateProfileCompletion()}%
+                </span>
               </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <h1 className="text-xl font-bold font-serif text-[#0F253B]">
-                    {profile.name}
-                  </h1>
-                  <span className="w-2 h-2 rounded-full bg-[#15803D]" title="Active Telemetry Pulse" />
-                </div>
-                <div className="text-xs font-semibold text-[#263B52]">
-                  {profile.course}
-                </div>
-                <div className="text-xs text-[#52667A] font-mono">
-                  {profile.level}
-                </div>
-                <div className="text-[11px] text-[#687C92] pt-1 flex items-center gap-1.5 flex-wrap">
-                  <span className="flex items-center gap-1">
-                    <MapPin className="w-3 h-3 text-[#52667A]" />
-                    {profile.partnerDistrict}
-                  </span>
-                  <span>·</span>
-                  <span className="flex items-center gap-1">
-                    <GraduationCap className="w-3 h-3 text-[#52667A]" />
-                    {dossier?.trainee?.education || 'ITI Diploma'}
-                  </span>
-                </div>
-              </div>
+              <span className="text-[10px] font-mono text-emerald-700">Completion rate</span>
             </div>
 
-            {/* Employment Status Strip */}
-            <div className="lg:col-span-4 border-t lg:border-t-0 lg:border-l border-[#D5CEAE] pt-4 lg:pt-0 lg:pl-6 space-y-2">
-              <div className="text-xs font-mono uppercase tracking-wider text-[#52667A]">
-                Current Active Employment
+            {/* 2. Training Status */}
+            <div className="bg-white border border-[#DCE3E7] rounded-lg p-3.5 text-center flex flex-col justify-between">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-[#5E6B75]">Training</span>
+              <div className="my-2">
+                <span className="text-2xl font-bold font-mono text-[#18324A]">
+                  {trainingHistory.filter((t) => t.isCompleted || t.status === 'COMPLETED').length}
+                </span>
+                <span className="text-xs font-mono text-[#5E6B75]"> / {trainingHistory.length}</span>
               </div>
-              <div className="space-y-1">
-                <div className="text-sm font-bold text-[#0F253B] flex items-center gap-1.5">
-                  <Building2 className="w-4 h-4 text-[#263B52]" />
-                  <span>{profile.company}</span>
-                </div>
-                <div className="text-xs text-[#4A5D70]">
-                  {profile.currentRole}
-                </div>
-                <div className="text-[11px] font-mono text-[#687C92] flex items-center gap-2">
-                  <span>Tenure: <strong className="text-[#0F253B]">{profile.tenureMonths} Months</strong></span>
-                  <span>·</span>
-                  <span>EPFO: {profile.epfoId}</span>
-                </div>
-              </div>
+              <span className="text-[10px] font-mono text-[#5E6B75]">Completed courses</span>
             </div>
 
-            {/* Wage Delta & DPDP Verification Badges */}
-            <div className="lg:col-span-4 border-t lg:border-t-0 lg:border-l border-[#D5CEAE] pt-4 lg:pt-0 lg:pl-6 flex flex-col justify-between space-y-3">
-              <div>
-                <span className="text-xs font-mono uppercase tracking-wider text-[#52667A] block">
-                  Longitudinal Wage Lift
-                </span>
-                <div className="flex items-baseline gap-2 mt-0.5">
-                  <span className="text-2xl font-serif font-bold text-[#15803D]">
-                    ₹{profile.currentSalary.toLocaleString('en-IN')}/mo
-                  </span>
-                  <span className="text-xs font-mono font-bold text-[#15803D] bg-[#D8EEDF] px-1.5 py-0.5 rounded border border-[#B6DBC0]">
-                    +{profile.wageDeltaPercent}% Lift
-                  </span>
-                </div>
-                <span className="text-[10px] font-mono text-[#7A8C9E]">
-                  Baseline Entry: ₹{profile.baselineSalary.toLocaleString('en-IN')}/mo
+            {/* 3. Certifications */}
+            <div className="bg-white border border-[#DCE3E7] rounded-lg p-3.5 text-center flex flex-col justify-between">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-[#5E6B75]">Certification</span>
+              <div className="my-2">
+                <span className="text-2xl font-bold font-mono text-[#18324A]">
+                  {certifications.length}
                 </span>
               </div>
+              <span className="text-[10px] font-mono text-emerald-700">Verified credentials</span>
+            </div>
 
-              {/* Status Pills */}
-              <div className="flex flex-wrap gap-2 pt-1">
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#D8EEDF] text-[#164627] text-[10px] font-mono border border-[#B6DBC0]">
-                  <CheckCircle2 className="w-3 h-3 text-[#15803D]" />
-                  Training Verified
-                </span>
-                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono border ${
-                  isConsented ? 'bg-[#D8EEDF] text-[#164627] border-[#B6DBC0]' : 'bg-amber-100 text-amber-900 border-amber-300'
-                }`}>
-                  <ShieldCheck className={`w-3 h-3 ${isConsented ? 'text-[#15803D]' : 'text-amber-700'}`} />
-                  {isConsented ? 'DPDP 2023 Consent Active' : 'DPDP Consent Pending'}
+            {/* 4. Current Outcome */}
+            <div className="bg-white border border-[#DCE3E7] rounded-lg p-3.5 text-center flex flex-col justify-between">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-[#5E6B75]">Current Outcome</span>
+              <div className="my-2">
+                <span className="text-xs font-mono font-bold uppercase px-2 py-1 rounded bg-[#E8F1F7] text-[#18324A] inline-block truncate max-w-full">
+                  {trainee.employmentStatus || 'NOT EMPLOYED'}
                 </span>
               </div>
+              <span className="text-[10px] font-mono text-[#5E6B75]">Active status</span>
+            </div>
+
+            {/* 5. Follow-ups */}
+            <div className="bg-white border border-[#DCE3E7] rounded-lg p-3.5 text-center flex flex-col justify-between">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-[#5E6B75]">Follow-ups</span>
+              <div className="my-2">
+                <span className={`text-2xl font-bold font-mono ${pendingFollowUps.length > 0 ? 'text-amber-600' : 'text-[#18324A]'}`}>
+                  {pendingFollowUps.length}
+                </span>
+                <span className="text-xs font-mono text-[#5E6B75]"> pending</span>
+              </div>
+              <span className="text-[10px] font-mono text-[#5E6B75]">{completedFollowUps.length} completed</span>
+            </div>
+
+            {/* 6. Skill Gaps */}
+            <div className="bg-white border border-[#DCE3E7] rounded-lg p-3.5 text-center flex flex-col justify-between">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-[#5E6B75]">Skill Gaps</span>
+              <div className="my-2">
+                <span className="text-2xl font-bold font-mono text-[#18324A]">
+                  {skillGaps.length}
+                </span>
+              </div>
+              <span className="text-[10px] font-mono text-[#5E6B75]">Assessed competencies</span>
             </div>
 
           </div>
-        </div>
 
-        {/* Functional Three Tabs Navigation */}
-        <div className="flex border-b border-[#D5CEAE] bg-[#FAF7EE] rounded-t-lg p-1 gap-1">
-          <button
-            id="tab-btn-trajectory"
-            onClick={() => handleTabClick('trajectory')}
-            className={`flex-1 py-2.5 text-xs font-mono font-semibold rounded transition-colors cursor-pointer ${
-              activeTab === 'trajectory' 
-                ? 'bg-[#263B52] text-white shadow-xs' 
-                : 'text-[#47617C] hover:bg-[#EDE8D5] hover:text-[#0F253B]'
-            }`}
-          >
-            1. Trajectory Arc & Salary History
-          </button>
-          <button
-            id="tab-btn-skills"
-            onClick={() => handleTabClick('skills')}
-            className={`flex-1 py-2.5 text-xs font-mono font-semibold rounded transition-colors cursor-pointer ${
-              activeTab === 'skills' 
-                ? 'bg-[#263B52] text-white shadow-xs' 
-                : 'text-[#47617C] hover:bg-[#EDE8D5] hover:text-[#0F253B]'
-            }`}
-          >
-            2. Skill Gaps vs Industry Benchmark
-          </button>
-          <button
-            id="tab-btn-ledger"
-            onClick={() => handleTabClick('ledger')}
-            className={`flex-1 py-2.5 text-xs font-mono font-semibold rounded transition-colors cursor-pointer ${
-              activeTab === 'ledger' 
-                ? 'bg-[#263B52] text-white shadow-xs' 
-                : 'text-[#47617C] hover:bg-[#EDE8D5] hover:text-[#0F253B]'
-            }`}
-          >
-            3. Action Ledger & Follow-up Surveys
-          </button>
-        </div>
-
-        {/* ========================================================================= */}
-        {/* TAB 1 — TRAJECTORY ARC (Rendered ONLY when activeTab === 'trajectory')     */}
-        {/* ========================================================================= */}
-        {activeTab === 'trajectory' && (
-          <div className="bg-[#FAF7EE] border border-[#D5CEAE] rounded-b-lg p-5 sm:p-6 shadow-xs space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#D5CEAE] pb-3">
+          {/* Quick Action & Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            
+            {/* Card A: Active Employment & Progression */}
+            <div className="bg-white border border-[#DCE3E7] rounded-lg p-5 flex flex-col justify-between">
               <div>
-                <span className="text-xs font-mono uppercase tracking-wider text-[#263B52] block">
-                  Section 01 · Longitudinal Telemetry
-                </span>
-                <h2 className="text-lg font-serif font-bold text-[#0F253B]">
-                  Career Trajectory Arc (Multi-Year Horizon)
-                </h2>
-              </div>
-              <div className="flex items-center gap-3 text-xs font-mono">
-                <span className="flex items-center gap-1.5 text-[#15803D]">
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#15803D]" />
-                  Completed
-                </span>
-                <span className="flex items-center gap-1.5 text-[#B45309]">
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#D97706]" />
-                  Current Active
-                </span>
-                <span className="flex items-center gap-1.5 text-[#47617C]">
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#94A3B8]" />
-                  Projected
-                </span>
-              </div>
-            </div>
-
-            {/* SVG Arc Graph Canvas */}
-            <div className="w-full overflow-x-auto py-4">
-              <div className="min-w-[960px] relative">
-                <svg viewBox="0 0 980 230" className="w-full h-auto select-none">
-                  {/* Background grid markings */}
-                  <line x1="40" y1="40" x2="940" y2="40" stroke="#E5DEC3" strokeDasharray="4 4" />
-                  <line x1="40" y1="100" x2="940" y2="100" stroke="#E5DEC3" strokeDasharray="4 4" />
-                  <line x1="40" y1="160" x2="940" y2="160" stroke="#E5DEC3" strokeDasharray="4 4" />
-
-                  {/* The Trajectory Curve */}
-                  <path
-                    d="M 50 173 C 210 155, 390 132, 570 105 C 700 85, 820 50, 920 35"
-                    fill="none"
-                    stroke="#263B52"
-                    strokeWidth="3.5"
-                    strokeLinecap="round"
-                  />
-
-                  {/* Milestones on curve */}
-                  {milestones.map((milestone) => {
-                    const isSelected = selectedMilestone?.step === milestone.step;
-                    const isCurrent = milestone.type === 'current';
-                    const circleFill = milestone.type === 'completed' 
-                      ? '#15803D' 
-                      : milestone.type === 'current' 
-                      ? '#D97706' 
-                      : '#94A3B8';
-
-                    return (
-                      <g 
-                        key={milestone.step} 
-                        className="cursor-pointer group"
-                        onClick={() => setSelectedMilestone(milestone)}
-                      >
-                        {/* Pulse Glow */}
-                        {(isSelected || isCurrent) && (
-                          <circle
-                            cx={milestone.coordinate.x}
-                            cy={milestone.coordinate.y}
-                            r={isSelected ? "16" : "12"}
-                            fill={isCurrent ? "#F3E8A8" : "#C9DCF1"}
-                            className="animate-pulse opacity-80"
-                          />
-                        )}
-
-                        <circle
-                          cx={milestone.coordinate.x}
-                          cy={milestone.coordinate.y}
-                          r="8"
-                          fill={circleFill}
-                          stroke="#FAF7EE"
-                          strokeWidth="2.5"
-                          className="transition-transform group-hover:scale-125"
-                        />
-
-                        <text
-                          x={milestone.coordinate.x}
-                          y={milestone.coordinate.y - 14}
-                          textAnchor="middle"
-                          fill="#0F253B"
-                          fontSize="11"
-                          fontWeight="bold"
-                          fontFamily="monospace"
-                        >
-                          {milestone.step} · {milestone.date}
-                        </text>
-
-                        <text
-                          x={milestone.coordinate.x}
-                          y={milestone.coordinate.y + 22}
-                          textAnchor="middle"
-                          fill="#263B52"
-                          fontSize="11"
-                          fontWeight="600"
-                        >
-                          {milestone.title}
-                        </text>
-                      </g>
-                    );
-                  })}
-                </svg>
-              </div>
-            </div>
-
-            {/* Selected Milestone Detail Drawer */}
-            {selectedMilestone && (
-              <div className="mt-4 p-4 rounded bg-[#FAF7EE] border border-[#D5CEAE] flex flex-wrap items-center justify-between gap-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded bg-[#263B52] text-[#F3E8A8] flex items-center justify-center font-mono font-bold text-sm shrink-0">
-                    {selectedMilestone.step}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-serif font-bold text-base text-[#0F253B]">
-                        {selectedMilestone.title}
-                      </h3>
-                      <span className="text-xs font-mono text-[#7A8C9E]">
-                        Target Date: {selectedMilestone.date}
-                      </span>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-mono font-bold text-[#18324A] flex items-center gap-1.5">
+                    <Briefcase className="w-4 h-4 text-[#087F8C]" />
+                    Employment & Wage
+                  </span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 text-[#5E6B75]">
+                    {trainee.employmentStatus || 'Unrecorded'}
+                  </span>
+                </div>
+                {activeEmployment ? (
+                  <div className="space-y-2 text-xs font-mono">
+                    <div className="font-bold text-[#16212B] text-sm">{activeEmployment.jobTitle}</div>
+                    <div className="text-[#5E6B75] flex items-center gap-1">
+                      <Building2 className="w-3.5 h-3.5" />
+                      <span>{activeEmployment.employerName}</span>
                     </div>
-                    <p className="text-xs text-[#4A5D70] mt-1">
-                      {selectedMilestone.description}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setIsModalOpen(true)}
-                    className="px-3 py-1.5 bg-[#15803D] hover:bg-[#116631] text-white rounded text-xs font-mono flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Update Career Outcome</span>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* SUB-SECTION 1: Longitudinal Salary Progression Ledger */}
-            <div className="pt-4 border-t border-[#D5CEAE] space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-serif font-bold text-base text-[#0F253B] flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4 text-[#15803D]" />
-                    <span>Longitudinal Salary Progression Ledger</span>
-                  </h3>
-                  <p className="text-xs text-[#52667A]">
-                    Actual historical records maintained in PostgreSQL. Never overwritten.
-                  </p>
-                </div>
-                <button
-                  onClick={() => setIsModalOpen(true)}
-                  className="px-3 py-1 bg-white hover:bg-[#EDE8D5] text-[#263B52] text-xs font-mono rounded border border-[#D5CEAE] cursor-pointer"
-                >
-                  + Add Salary Update
-                </button>
-              </div>
-
-              <div className="bg-white border border-[#D5CEAE] rounded-lg overflow-x-auto shadow-2xs">
-                <table className="w-full text-left border-collapse text-xs font-mono">
-                  <thead>
-                    <tr className="bg-[#EDE8D5] text-[#263B52] uppercase text-[10px]">
-                      <th className="py-2.5 px-3">Milestone Date</th>
-                      <th className="py-2.5 px-3">Organization / Employer</th>
-                      <th className="py-2.5 px-3">Role / Designation</th>
-                      <th className="py-2.5 px-3">Monthly Wage</th>
-                      <th className="py-2.5 px-3">Progression vs Baseline</th>
-                      <th className="py-2.5 px-3">Audit Verification</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#EDE8D5]">
-                    {/* Baseline Record */}
-                    <tr className="hover:bg-[#FAF7EE]">
-                      <td className="py-2.5 px-3 text-[#52667A]">Jan 2024 (Baseline)</td>
-                      <td className="py-2.5 px-3 font-semibold text-[#0F253B]">Tata Motors Ancillary Ltd.</td>
-                      <td className="py-2.5 px-3 text-[#52667A]">Junior Maintenance Tech</td>
-                      <td className="py-2.5 px-3 font-bold text-[#0F253B]">₹17,600/mo</td>
-                      <td className="py-2.5 px-3 text-[#52667A]">Baseline Entry (0%)</td>
-                      <td className="py-2.5 px-3 text-[#15803D] font-semibold">NCVET Placement Log</td>
-                    </tr>
-
-                    {/* Subsequent Real Employment Records */}
-                    {dossier?.employmentRecords && dossier.employmentRecords.length > 0 ? (
-                      dossier.employmentRecords.map((er) => {
-                        const wageDelta = profile.baselineSalary > 0 
-                          ? (((er.monthlySalary - profile.baselineSalary) / profile.baselineSalary) * 100).toFixed(1)
-                          : '0.0';
-                        return (
-                          <tr key={er.id} className="hover:bg-[#FAF7EE]">
-                            <td className="py-2.5 px-3 text-[#52667A]">
-                              {new Date(er.startDate).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}
-                            </td>
-                            <td className="py-2.5 px-3 font-semibold text-[#0F253B]">{er.employerName}</td>
-                            <td className="py-2.5 px-3 text-[#52667A]">{er.jobTitle}</td>
-                            <td className="py-2.5 px-3 font-bold text-[#15803D]">
-                              ₹{er.monthlySalary.toLocaleString()}/mo
-                            </td>
-                            <td className="py-2.5 px-3 font-bold text-[#15803D]">
-                              +{wageDelta}% Progression
-                            </td>
-                            <td className="py-2.5 px-3 text-[#15803D] font-semibold">
-                              Employer Validated ✓
-                            </td>
-                          </tr>
-                        );
-                      })
-                    ) : (
-                      <tr className="hover:bg-[#FAF7EE]">
-                        <td className="py-2.5 px-3 text-[#52667A]">Nov 2024</td>
-                        <td className="py-2.5 px-3 font-semibold text-[#0F253B]">{profile.company}</td>
-                        <td className="py-2.5 px-3 text-[#52667A]">{profile.currentRole}</td>
-                        <td className="py-2.5 px-3 font-bold text-[#15803D]">
-                          ₹{profile.currentSalary.toLocaleString()}/mo
-                        </td>
-                        <td className="py-2.5 px-3 font-bold text-[#15803D]">
-                          +{profile.wageDeltaPercent}% Progression
-                        </td>
-                        <td className="py-2.5 px-3 text-[#15803D] font-semibold">
-                          Payroll Verified ✓
-                        </td>
-                      </tr>
+                    {activeEmployment.monthlySalary > 0 && (
+                      <div className="text-emerald-700 font-bold">
+                        ₹{activeEmployment.monthlySalary.toLocaleString()}/month
+                      </div>
                     )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* SUB-SECTION 2: Sovereign Training History Record */}
-            <div className="pt-4 border-t border-[#D5CEAE] space-y-3">
-              <div>
-                <h3 className="font-serif font-bold text-base text-[#0F253B] flex items-center gap-2">
-                  <BookOpen className="w-4 h-4 text-[#263B52]" />
-                  <span>Sovereign Training & Certification History</span>
-                </h3>
-                <p className="text-xs text-[#52667A]">
-                  NCVET accredited vocational training records retrieved from PostgreSQL
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono">
-                <div className="bg-white border border-[#D5CEAE] rounded p-3 space-y-1">
-                  <div className="text-[10px] text-[#52667A] uppercase font-bold">Training Scheme</div>
-                  <div className="font-bold text-sm text-[#0F253B]">{dossier?.cohort?.name || 'PMKVY 4.0 Centurion'}</div>
-                  <div className="text-[11px] text-[#15803D]">420 Practical Workshop Hours</div>
-                </div>
-
-                <div className="bg-white border border-[#D5CEAE] rounded p-3 space-y-1">
-                  <div className="text-[10px] text-[#52667A] uppercase font-bold">Training Partner</div>
-                  <div className="font-bold text-sm text-[#0F253B]">{profile.trainingPartner}</div>
-                  <div className="text-[11px] text-[#52667A]">{profile.partnerDistrict}</div>
-                </div>
-
-                <div className="bg-white border border-[#D5CEAE] rounded p-3 space-y-1">
-                  <div className="text-[10px] text-[#52667A] uppercase font-bold">Certification Status</div>
-                  <div className="font-bold text-sm text-[#18324A]">{profile.level}</div>
-                  <div className="text-[11px] text-[#15803D] font-semibold">Assessment Score: 89.2% (Passed)</div>
-                </div>
-              </div>
-            </div>
-
-          </div>
-        )}
-
-        {/* ========================================================================= */}
-        {/* TAB 2 — SKILL GAPS (Rendered ONLY when activeTab === 'skills')            */}
-        {/* ========================================================================= */}
-        {activeTab === 'skills' && (
-          <div className="bg-[#FAF7EE] border border-[#D5CEAE] rounded-b-lg p-5 sm:p-6 shadow-xs space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#D5CEAE] pb-4">
-              <div>
-                <span className="text-xs font-mono uppercase tracking-wider text-[#263B52] block">
-                  Section 02 · Competency Framework
-                </span>
-                <h2 className="text-lg font-serif font-bold text-[#0F253B]">
-                  Industrial Skill Gaps vs Industry Benchmark
-                </h2>
+                  </div>
+                ) : (
+                  <p className="text-xs font-mono text-[#5E6B75] py-2">
+                    No active employment record is currently registered. Update your current outcome below.
+                  </p>
+                )}
               </div>
               <button
-                onClick={() => handleRequestAssessment('Industrial Automation Level 5')}
-                disabled={isSubmittingAction}
-                className="px-3.5 py-1.5 bg-[#263B52] hover:bg-[#1A2C40] disabled:opacity-50 text-white text-xs font-mono rounded cursor-pointer transition-colors flex items-center gap-1.5 shadow-xs"
+                onClick={() => handleTabClick('outcomes')}
+                className="mt-4 pt-3 border-t border-[#DCE3E7] text-xs font-mono text-[#087F8C] hover:text-[#18324A] flex items-center justify-between font-bold cursor-pointer"
               >
-                <Award className="w-3.5 h-3.5 text-[#F3E8A8]" />
-                <span>{isSubmittingAction ? 'Requesting...' : 'Request Assessment'}</span>
+                <span>Manage Outcome Record</span>
+                <ChevronRight className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Real Skill Gaps List */}
-            {skills.length === 0 ? (
-              <div className="p-8 text-center bg-white border border-[#D5CEAE] rounded-lg space-y-3">
-                <Award className="w-10 h-10 text-[#52667A] mx-auto" />
-                <h3 className="font-serif font-bold text-base text-[#0F253B]">
-                  No competency assessments available yet.
-                </h3>
-                <p className="text-xs text-[#52667A] font-mono max-w-sm mx-auto">
-                  Submit a diagnostic assessment request to your training provider (Centurion Skill Academy) to record real competency evaluations.
-                </p>
-                <button
-                  onClick={() => handleRequestAssessment('Level 4 Diagnostic Evaluation')}
-                  disabled={isSubmittingAction}
-                  className="px-4 py-2 bg-[#263B52] hover:bg-[#1A2C40] text-white text-xs font-mono rounded cursor-pointer transition-colors inline-flex items-center gap-2 shadow-xs"
-                >
-                  <Award className="w-3.5 h-3.5 text-[#F3E8A8]" />
-                  <span>Request Assessment</span>
-                </button>
+            {/* Card B: Training & Credentials */}
+            <div className="bg-white border border-[#DCE3E7] rounded-lg p-5 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-mono font-bold text-[#18324A] flex items-center gap-1.5">
+                    <GraduationCap className="w-4 h-4 text-[#087F8C]" />
+                    Training & Credentials
+                  </span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-50 text-emerald-800">
+                    {certifications.length} Credentials
+                  </span>
+                </div>
+                {trainingHistory.length > 0 ? (
+                  <div className="space-y-2 text-xs font-mono">
+                    <div className="font-bold text-[#16212B]">{trainingHistory[0].programme}</div>
+                    <div className="text-[#5E6B75]">{trainingHistory[0].providerName}</div>
+                    <div className="text-[11px] text-emerald-700 font-medium">
+                      Status: {trainingHistory[0].status}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs font-mono text-[#5E6B75] py-2">
+                    No vocational enrollment records currently logged in registry.
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => handleTabClick('training')}
+                className="mt-4 pt-3 border-t border-[#DCE3E7] text-xs font-mono text-[#087F8C] hover:text-[#18324A] flex items-center justify-between font-bold cursor-pointer"
+              >
+                <span>View Training History</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Card C: Longitudinal Follow-up Pulse */}
+            <div className="bg-white border border-[#DCE3E7] rounded-lg p-5 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-mono font-bold text-[#18324A] flex items-center gap-1.5">
+                    <ClipboardList className="w-4 h-4 text-[#087F8C]" />
+                    Follow-up Audits
+                  </span>
+                  {pendingFollowUps.length > 0 ? (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-100 text-amber-900 font-bold">
+                      {pendingFollowUps.length} Pending
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-50 text-emerald-800">
+                      All Caught Up
+                    </span>
+                  )}
+                </div>
+                {pendingFollowUps.length > 0 ? (
+                  <div className="space-y-2 text-xs font-mono">
+                    <p className="text-[#16212B]">
+                      A periodic longitudinal survey is pending your verification.
+                    </p>
+                    <p className="text-[11px] text-[#5E6B75]">
+                      Scheduled: {new Date(pendingFollowUps[0].scheduledAt).toLocaleDateString('en-GB')}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-xs font-mono text-[#5E6B75] py-2">
+                    No pending retention surveys. Your longitudinal outcome record is up to date.
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => handleTabClick('followups')}
+                className="mt-4 pt-3 border-t border-[#DCE3E7] text-xs font-mono text-[#087F8C] hover:text-[#18324A] flex items-center justify-between font-bold cursor-pointer"
+              >
+                <span>Access Follow-up Hub</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+          </div>
+
+          {/* Recent Timeline Preview */}
+          <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-serif font-bold text-base text-[#16212B]">
+                Recent Outcome Milestones
+              </h3>
+              <button
+                onClick={() => handleTabClick('journey')}
+                className="text-xs font-mono text-[#087F8C] hover:underline cursor-pointer"
+              >
+                View Full Chronological Journey →
+              </button>
+            </div>
+            {journeyEvents.length > 0 ? (
+              <div className="space-y-3">
+                {journeyEvents.slice(0, 4).map((event, idx) => (
+                  <div key={idx} className="flex items-start gap-3 p-3 bg-slate-50 border border-[#DCE3E7] rounded text-xs font-mono">
+                    <div className="w-2 h-2 rounded-full bg-[#087F8C] mt-1.5 shrink-0" />
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-[#16212B]">{event.title}</span>
+                        <span className="text-[10px] text-[#5E6B75]">{event.date}</span>
+                      </div>
+                      <div className="text-[11px] text-[#5E6B75] mt-0.5">
+                        {event.organization} • <span className="text-emerald-700">{event.status}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {skills.map((skill) => {
-                  const isExceeds = skill.status === 'exceeds';
-                  const isAt = skill.status === 'at';
-                  
-                  return (
-                    <div 
-                      key={skill.id} 
-                      className="p-4 sm:p-5 rounded-lg bg-white border border-[#D5CEAE] shadow-xs space-y-3 flex flex-col justify-between"
-                    >
+              <p className="text-xs font-mono text-[#5E6B75] py-4 text-center">
+                No outcome history records logged yet.
+              </p>
+            )}
+          </div>
+
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 2: TRAINING & CERTIFICATIONS                                          */}
+      {/* ========================================================================= */}
+      {activeTab === 'training' && (
+        <div className="space-y-6 animate-in fade-in duration-150">
+          
+          {/* Section Header */}
+          <div className="p-4 bg-white border border-[#DCE3E7] rounded-lg">
+            <h2 className="text-lg font-serif font-bold text-[#16212B]">
+              Vocational Training & Verified Certifications
+            </h2>
+            <p className="text-xs font-mono text-[#5E6B75] mt-0.5">
+              Official training records registered in the KaushalSetu National Skill Registry.
+            </p>
+          </div>
+
+          {/* Training Records */}
+          <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+            <h3 className="font-serif font-bold text-base text-[#16212B] mb-4 flex items-center gap-2">
+              <BookOpen className="w-4 h-4 text-[#087F8C]" />
+              <span>Training History</span>
+              <span className="text-xs font-mono text-[#5E6B75] font-normal">({trainingHistory.length} records)</span>
+            </h3>
+
+            {trainingHistory.length > 0 ? (
+              <div className="space-y-3">
+                {trainingHistory.map((th) => (
+                  <div key={th.id} className="p-4 border border-[#DCE3E7] rounded-lg hover:border-[#18324A] transition bg-[#FAF7EE]/50">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div>
-                        {/* Header: Skill Name & Priority */}
-                        <div className="flex items-start justify-between gap-2">
-                          <h3 className="font-bold text-sm text-[#0F253B] leading-snug">
-                            {skill.name}
-                          </h3>
-                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#FAF7EE] border border-[#D5CEAE] text-[#52667A] shrink-0 font-medium">
-                            {skill.priority}
+                        <h4 className="font-serif font-bold text-sm text-[#16212B]">{th.programme}</h4>
+                        <p className="text-xs font-mono text-[#5E6B75] mt-0.5 flex items-center gap-2">
+                          <Building2 className="w-3.5 h-3.5" />
+                          <span>{th.providerName}</span>
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2.5 py-1 rounded text-[11px] font-mono font-bold uppercase ${
+                          th.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'
+                        }`}>
+                          {th.status}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-[#DCE3E7] grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-mono text-[#5E6B75]">
+                      <div>
+                        <span className="block text-[#16212B] font-medium">Start Date</span>
+                        <span>{th.startDate ? new Date(th.startDate).toLocaleDateString('en-GB') : 'N/A'}</span>
+                      </div>
+                      <div>
+                        <span className="block text-[#16212B] font-medium">End Date</span>
+                        <span>{th.endDate ? new Date(th.endDate).toLocaleDateString('en-GB') : 'In Progress'}</span>
+                      </div>
+                      <div>
+                        <span className="block text-[#16212B] font-medium">Enrollment Date</span>
+                        <span>{th.enrolledAt ? new Date(th.enrolledAt).toLocaleDateString('en-GB') : 'N/A'}</span>
+                      </div>
+                      <div>
+                        <span className="block text-[#16212B] font-medium">Registry ID</span>
+                        <span className="truncate block">{th.id}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-xs font-mono text-[#5E6B75] border border-dashed border-[#DCE3E7] rounded-lg">
+                <BookOpen className="w-8 h-8 text-[#5E6B75] mx-auto mb-2 opacity-50" />
+                <p>No training records have been added yet.</p>
+              </div>
+            )}
+          </div>
+
+          {/* Certifications Records */}
+          <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+            <h3 className="font-serif font-bold text-base text-[#16212B] mb-4 flex items-center gap-2">
+              <Award className="w-4 h-4 text-[#087F8C]" />
+              <span>Verified Certifications</span>
+              <span className="text-xs font-mono text-[#5E6B75] font-normal">({certifications.length} credentials)</span>
+            </h3>
+
+            {certifications.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {certifications.map((cert, idx) => (
+                  <div key={cert.id || idx} className="p-4 border border-[#DCE3E7] rounded-lg bg-[#FAF7EE]/50 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <span className="text-[10px] font-mono uppercase tracking-wider text-[#087F8C] font-semibold">
+                            {cert.issuingBody || 'NCVET Authorized Body'}
+                          </span>
+                          <h4 className="font-serif font-bold text-base text-[#16212B] mt-0.5">{cert.name}</h4>
+                          <p className="text-xs font-mono text-[#5E6B75] mt-1">{cert.course}</p>
+                        </div>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0">
+                          {cert.status || 'VERIFIED'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="mt-4 pt-3 border-t border-[#DCE3E7] flex items-center justify-between text-[11px] font-mono text-[#5E6B75]">
+                      <div>
+                        <span>Certificate No: </span>
+                        <strong className="text-[#16212B]">{cert.certificateNumber}</strong>
+                      </div>
+                      <div>
+                        <span>Issued: </span>
+                        <span>{cert.issuedAt ? new Date(cert.issuedAt).toLocaleDateString('en-GB') : 'Recorded'}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-xs font-mono text-[#5E6B75] border border-dashed border-[#DCE3E7] rounded-lg">
+                <Award className="w-8 h-8 text-[#5E6B75] mx-auto mb-2 opacity-50" />
+                <p>No certification record available yet.</p>
+              </div>
+            )}
+          </div>
+
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 3: OUTCOMES MANAGEMENT (Most critical section)                         */}
+      {/* ========================================================================= */}
+      {activeTab === 'outcomes' && (
+        <div className="space-y-6 animate-in fade-in duration-150">
+          
+          {/* Header */}
+          <div className="p-4 bg-white border border-[#DCE3E7] rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-serif font-bold text-[#16212B]">
+                Current Post-Training Outcome Management
+              </h2>
+              <p className="text-xs font-mono text-[#5E6B75] mt-0.5">
+                Update your actual employment, self-employment, apprenticeship, or job-seeking status in the national database.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono font-medium text-[#5E6B75]">Active Status:</span>
+              <span className="px-2.5 py-1 rounded text-xs font-mono font-bold uppercase bg-[#18324A] text-white">
+                {trainee.employmentStatus || 'NOT EMPLOYED'}
+              </span>
+            </div>
+          </div>
+
+          {/* Feedback Banners */}
+          {outcomeSuccessMessage && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded text-xs font-mono text-emerald-800 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{outcomeSuccessMessage}</span>
+            </div>
+          )}
+          {outcomeErrorMessage && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded text-xs font-mono text-red-800 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+              <span>{outcomeErrorMessage}</span>
+            </div>
+          )}
+
+          {/* Outcome Selector (4-way toggle) */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { id: 'EMPLOYED', label: 'Employed', desc: 'Wage / Regular Employment', icon: Briefcase },
+              { id: 'SELF_EMPLOYED', label: 'Self-Employed', desc: 'Independent / Business', icon: User },
+              { id: 'APPRENTICESHIP', label: 'Apprenticeship', desc: 'Industry Training Contract', icon: GraduationCap },
+              { id: 'NOT_EMPLOYED', label: 'Not Employed', desc: 'Seeking Job / Other Reasons', icon: Clock },
+            ].map((opt) => {
+              const Icon = opt.icon;
+              const isSelected = outcomeType === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setOutcomeType(opt.id as any)}
+                  className={`p-4 rounded-lg border text-left transition cursor-pointer flex flex-col justify-between ${
+                    isSelected
+                      ? 'border-[#087F8C] bg-[#E7F5F4] ring-2 ring-[#087F8C]/20'
+                      : 'border-[#DCE3E7] bg-white hover:border-[#18324A]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <Icon className={`w-5 h-5 ${isSelected ? 'text-[#087F8C]' : 'text-[#5E6B75]'}`} />
+                    {isSelected && <CheckCircle2 className="w-4 h-4 text-[#087F8C]" />}
+                  </div>
+                  <div>
+                    <span className="font-serif font-bold text-sm text-[#16212B] block">{opt.label}</span>
+                    <span className="text-[10px] font-mono text-[#5E6B75]">{opt.desc}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Dynamic Outcome Form */}
+          <div className="bg-white border border-[#DCE3E7] rounded-lg p-6">
+            <form onSubmit={handleOutcomeSubmit} className="space-y-4">
+              
+              {/* Form Option 1: EMPLOYED */}
+              {outcomeType === 'EMPLOYED' && (
+                <div className="space-y-4">
+                  <div className="border-b border-[#DCE3E7] pb-2">
+                    <h3 className="font-serif font-bold text-sm text-[#16212B]">
+                      Wage Employment Details
+                    </h3>
+                    <p className="text-[11px] font-mono text-[#5E6B75]">
+                      Provide verified information about your current wage employment.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-mono font-medium text-[#16212B] mb-1">
+                        Job Title / Designation *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={jobTitle}
+                        onChange={(e) => setJobTitle(e.target.value)}
+                        placeholder="e.g. Industrial Automation Electrician"
+                        className="w-full px-3 py-2 bg-[#FAF7EE] border border-[#DCE3E7] rounded text-xs font-mono text-[#16212B] focus:outline-none focus:border-[#18324A]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-mono font-medium text-[#16212B] mb-1">
+                        Employer / Company Name *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={employerName}
+                        onChange={(e) => setEmployerName(e.target.value)}
+                        placeholder="e.g. Tata Motors Ancillary Ltd."
+                        className="w-full px-3 py-2 bg-[#FAF7EE] border border-[#DCE3E7] rounded text-xs font-mono text-[#16212B] focus:outline-none focus:border-[#18324A]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-mono font-medium text-[#16212B] mb-1">
+                        Employment Type
+                      </label>
+                      <select
+                        value={employmentType}
+                        onChange={(e) => setEmploymentType(e.target.value)}
+                        className="w-full px-3 py-2 bg-[#FAF7EE] border border-[#DCE3E7] rounded text-xs font-mono text-[#16212B] focus:outline-none focus:border-[#18324A]"
+                      >
+                        <option value="REGULAR">Regular / Full-time</option>
+                        <option value="CONTRACT">Contractual</option>
+                        <option value="PART_TIME">Part-time</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-mono font-medium text-[#16212B] mb-1">
+                        Monthly Salary / Wage (₹) *
+                      </label>
+                      <input
+                        type="number"
+                        required
+                        min="0"
+                        step="100"
+                        value={monthlySalary}
+                        onChange={(e) => setMonthlySalary(e.target.value)}
+                        placeholder="e.g. 21500"
+                        className="w-full px-3 py-2 bg-[#FAF7EE] border border-[#DCE3E7] rounded text-xs font-mono text-[#16212B] focus:outline-none focus:border-[#18324A]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-mono font-medium text-[#16212B] mb-1">
+                        Employment Start Date
+                      </label>
+                      <input
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                        className="w-full px-3 py-2 bg-[#FAF7EE] border border-[#DCE3E7] rounded text-xs font-mono text-[#16212B] focus:outline-none focus:border-[#18324A]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-mono font-medium text-[#16212B] mb-1">
+                        Work Location: District
+                      </label>
+                      <input
+                        type="text"
+                        value={district}
+                        onChange={(e) => setDistrict(e.target.value)}
+                        placeholder="e.g. Pune"
+                        className="w-full px-3 py-2 bg-[#FAF7EE] border border-[#DCE3E7] rounded text-xs font-mono text-[#16212B] focus:outline-none focus:border-[#18324A]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-mono font-medium text-[#16212B] mb-1">
+                        Work Location: State
+                      </label>
+                      <input
+                        type="text"
+                        value={state}
+                        onChange={(e) => setState(e.target.value)}
+                        placeholder="e.g. Maharashtra"
+                        className="w-full px-3 py-2 bg-[#FAF7EE] border border-[#DCE3E7] rounded text-xs font-mono text-[#16212B] focus:outline-none focus:border-[#18324A]"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Form Option 2: SELF_EMPLOYED */}
+              {outcomeType === 'SELF_EMPLOYED' && (
+                <div className="space-y-4">
+                  <div className="border-b border-[#DCE3E7] pb-2">
+                    <h3 className="font-serif font-bold text-sm text-[#16212B]">
+                      Self-Employment & Enterprise Details
+                    </h3>
+                    <p className="text-[11px] font-mono text-[#5E6B75]">
+                      Information regarding your business or independent contractor activity.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-mono font-medium text-[#16212B] mb-1">
+                        Business / Activity Type *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={selfCategory}
+                        onChange={(e) => setSelfCategory(e.target.value)}
+                        placeholder="e.g. Electrical Installation & Repair Workshop"
+                        className="w-full px-3 py-2 bg-[#FAF7EE] border border-[#DCE3E7] rounded text-xs font-mono text-[#16212B] focus:outline-none focus:border-[#18324A]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-mono font-medium text-[#16212B] mb-1">
+                        Estimated Monthly Income / Earnings (₹)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="100"
+                        value={selfIncome}
+                        onChange={(e) => setSelfIncome(e.target.value)}
+                        placeholder="e.g. 24000"
+                        className="w-full px-3 py-2 bg-[#FAF7EE] border border-[#DCE3E7] rounded text-xs font-mono text-[#16212B] focus:outline-none focus:border-[#18324A]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-mono font-medium text-[#16212B] mb-1">
+                        Start Date
+                      </label>
+                      <input
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                        className="w-full px-3 py-2 bg-[#FAF7EE] border border-[#DCE3E7] rounded text-xs font-mono text-[#16212B] focus:outline-none focus:border-[#18324A]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-mono font-medium text-[#16212B] mb-1">
+                        District
+                      </label>
+                      <input
+                        type="text"
+                        value={district}
+                        onChange={(e) => setDistrict(e.target.value)}
+                        placeholder="e.g. Pune"
+                        className="w-full px-3 py-2 bg-[#FAF7EE] border border-[#DCE3E7] rounded text-xs font-mono text-[#16212B] focus:outline-none focus:border-[#18324A]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-mono font-medium text-[#16212B] mb-1">
+                        State
+                      </label>
+                      <input
+                        type="text"
+                        value={state}
+                        onChange={(e) => setState(e.target.value)}
+                        placeholder="e.g. Maharashtra"
+                        className="w-full px-3 py-2 bg-[#FAF7EE] border border-[#DCE3E7] rounded text-xs font-mono text-[#16212B] focus:outline-none focus:border-[#18324A]"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Form Option 3: APPRENTICESHIP */}
+              {outcomeType === 'APPRENTICESHIP' && (
+                <div className="space-y-4">
+                  <div className="border-b border-[#DCE3E7] pb-2">
+                    <h3 className="font-serif font-bold text-sm text-[#16212B]">
+                      Apprenticeship Training Details
+                    </h3>
+                    <p className="text-[11px] font-mono text-[#5E6B75]">
+                      Information regarding your active apprenticeship contract.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-mono font-medium text-[#16212B] mb-1">
+                        Sponsoring Organisation *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={appEmployer}
+                        onChange={(e) => setAppEmployer(e.target.value)}
+                        placeholder="e.g. Tata Motors Plant Operations"
+                        className="w-full px-3 py-2 bg-[#FAF7EE] border border-[#DCE3E7] rounded text-xs font-mono text-[#16212B] focus:outline-none focus:border-[#18324A]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-mono font-medium text-[#16212B] mb-1">
+                        Trade / Designation *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={appTrade}
+                        onChange={(e) => setAppTrade(e.target.value)}
+                        placeholder="e.g. Apprentice Electrician"
+                        className="w-full px-3 py-2 bg-[#FAF7EE] border border-[#DCE3E7] rounded text-xs font-mono text-[#16212B] focus:outline-none focus:border-[#18324A]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-mono font-medium text-[#16212B] mb-1">
+                        Monthly Stipend (₹)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="100"
+                        value={monthlySalary}
+                        onChange={(e) => setMonthlySalary(e.target.value)}
+                        placeholder="e.g. 12000"
+                        className="w-full px-3 py-2 bg-[#FAF7EE] border border-[#DCE3E7] rounded text-xs font-mono text-[#16212B] focus:outline-none focus:border-[#18324A]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-mono font-medium text-[#16212B] mb-1">
+                        Contract Start Date
+                      </label>
+                      <input
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                        className="w-full px-3 py-2 bg-[#FAF7EE] border border-[#DCE3E7] rounded text-xs font-mono text-[#16212B] focus:outline-none focus:border-[#18324A]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-mono font-medium text-[#16212B] mb-1">
+                        Contract End Date
+                      </label>
+                      <input
+                        type="date"
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                        className="w-full px-3 py-2 bg-[#FAF7EE] border border-[#DCE3E7] rounded text-xs font-mono text-[#16212B] focus:outline-none focus:border-[#18324A]"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Form Option 4: NOT_EMPLOYED */}
+              {outcomeType === 'NOT_EMPLOYED' && (
+                <div className="space-y-4">
+                  <div className="border-b border-[#DCE3E7] pb-2">
+                    <h3 className="font-serif font-bold text-sm text-[#16212B]">
+                      Non-Employment Status Record
+                    </h3>
+                    <p className="text-[11px] font-mono text-[#5E6B75]">
+                      Select the primary structured reason to assist national skill impact planning.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-mono font-medium text-[#16212B] mb-1">
+                        Primary Reason *
+                      </label>
+                      <select
+                        value={unemploymentReason}
+                        onChange={(e) => setUnemploymentReason(e.target.value)}
+                        className="w-full px-3 py-2 bg-[#FAF7EE] border border-[#DCE3E7] rounded text-xs font-mono text-[#16212B] focus:outline-none focus:border-[#18324A]"
+                      >
+                        <option value="Still seeking employment">Still seeking employment</option>
+                        <option value="Further education">Further education / Higher studies</option>
+                        <option value="Personal reasons">Personal reasons / Family commitments</option>
+                        <option value="Location constraints">Location constraints / Relocation</option>
+                        <option value="Skill mismatch">Skill mismatch / Need further training</option>
+                        <option value="Lack of opportunities">Lack of local opportunities</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-mono font-medium text-[#16212B] mb-1">
+                        Preferred Employment Sector
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Electrical / Automation / Renewable Energy"
+                        className="w-full px-3 py-2 bg-[#FAF7EE] border border-[#DCE3E7] rounded text-xs font-mono text-[#16212B] focus:outline-none focus:border-[#18324A]"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-mono font-medium text-[#16212B] mb-1">
+                      Additional Notes / Circumstances
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={unemploymentNotes}
+                      onChange={(e) => setUnemploymentNotes(e.target.value)}
+                      placeholder="Optional notes regarding employment search or location preferences..."
+                      className="w-full px-3 py-2 bg-[#FAF7EE] border border-[#DCE3E7] rounded text-xs font-mono text-[#16212B] focus:outline-none focus:border-[#18324A]"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* General Notes Field */}
+              <div>
+                <label className="block text-xs font-mono font-medium text-[#16212B] mb-1">
+                  Outcome Audit Notes
+                </label>
+                <input
+                  type="text"
+                  value={outcomeNotes}
+                  onChange={(e) => setOutcomeNotes(e.target.value)}
+                  placeholder="e.g. Post-certification outcome recorded directly by trainee."
+                  className="w-full px-3 py-2 bg-[#FAF7EE] border border-[#DCE3E7] rounded text-xs font-mono text-[#16212B] focus:outline-none focus:border-[#18324A]"
+                />
+              </div>
+
+              {/* Submit Button */}
+              <div className="pt-3 border-t border-[#DCE3E7] flex items-center justify-between">
+                <span className="text-[11px] font-mono text-[#5E6B75]">
+                  Updates are directly committed to Supabase Cloud PostgreSQL with row-level security audit logs.
+                </span>
+                <button
+                  type="submit"
+                  disabled={isSubmittingOutcome}
+                  className="px-5 py-2 bg-[#18324A] hover:bg-[#263B52] text-white text-xs font-mono font-bold rounded transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs"
+                >
+                  {isSubmittingOutcome ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Recording to Database...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FileCheck className="w-3.5 h-3.5" />
+                      <span>Commit Outcome Record</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+            </form>
+          </div>
+
+          {/* Observed Salary Progression Card */}
+          <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+            <h3 className="font-serif font-bold text-base text-[#16212B] mb-1 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-[#087F8C]" />
+              <span>Observed Salary Progression</span>
+            </h3>
+            <p className="text-[11px] font-mono text-[#5E6B75] mb-4">
+              Longitudinal compensation records observed over time. Does not make causal claims.
+            </p>
+
+            {salaryProgression && salaryProgression.hasSufficientRecords ? (
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 p-4 bg-[#FAF7EE] border border-[#DCE3E7] rounded-lg text-xs font-mono">
+                <div>
+                  <span className="text-[#5E6B75] block text-[11px]">Previous Observed Salary</span>
+                  <span className="text-base font-bold text-[#16212B]">
+                    ₹{salaryProgression.baselineSalary.toLocaleString()}
+                  </span>
+                  <span className="block text-[10px] text-[#5E6B75] mt-0.5">
+                    Date: {new Date(salaryProgression.baselineDate).toLocaleDateString('en-GB')}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[#5E6B75] block text-[11px]">Current Observed Salary</span>
+                  <span className="text-base font-bold text-emerald-800">
+                    ₹{salaryProgression.currentSalary.toLocaleString()}
+                  </span>
+                  <span className="block text-[10px] text-[#5E6B75] mt-0.5">
+                    Date: {new Date(salaryProgression.currentDate).toLocaleDateString('en-GB')}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[#5E6B75] block text-[11px]">Observed Absolute Change</span>
+                  <span className={`text-base font-bold ${salaryProgression.absoluteChange >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                    {salaryProgression.absoluteChange >= 0 ? '+' : ''}₹{salaryProgression.absoluteChange.toLocaleString()}
+                  </span>
+                  <span className="block text-[10px] text-[#5E6B75] mt-0.5">Monthly difference</span>
+                </div>
+                <div>
+                  <span className="text-[#5E6B75] block text-[11px]">Observed Percentage Change</span>
+                  <span className={`text-base font-bold ${salaryProgression.percentChange >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                    {salaryProgression.percentChange >= 0 ? '+' : ''}{salaryProgression.percentChange}%
+                  </span>
+                  <span className="block text-[10px] text-[#5E6B75] mt-0.5">Recorded progression</span>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-6 text-xs font-mono text-[#5E6B75] border border-dashed border-[#DCE3E7] rounded-lg">
+                <p>Not enough historical records to calculate salary progression.</p>
+                <p className="text-[10px] mt-1 text-[#5E6B75]">
+                  At least two distinct chronological compensation records are required to calculate progression.
+                </p>
+              </div>
+            )}
+          </div>
+
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 4: TRAJECTORY & CHRONOLOGICAL JOURNEY                                  */}
+      {/* ========================================================================= */}
+      {activeTab === 'journey' && (
+        <div className="space-y-6 animate-in fade-in duration-150">
+          
+          {/* Header */}
+          <div className="p-4 bg-white border border-[#DCE3E7] rounded-lg">
+            <h2 className="text-lg font-serif font-bold text-[#16212B]">
+              Longitudinal Career Trajectory Arc & Outcome Journey
+            </h2>
+            <p className="text-xs font-mono text-[#5E6B75] mt-0.5">
+              Verified longitudinal progression generated from PostgreSQL registry milestones.
+            </p>
+          </div>
+
+          {/* Trajectory Arc Stepper (TRAINING ➔ CERTIFICATION ➔ EMPLOYMENT ➔ RETENTION ➔ GROWTH) */}
+          <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+            <h3 className="font-serif font-bold text-base text-[#16212B] mb-2 flex items-center gap-2">
+              <Compass className="w-4 h-4 text-[#087F8C]" />
+              <span>Career Trajectory Arc</span>
+            </h3>
+            <p className="text-[11px] font-mono text-[#5E6B75] mb-6">
+              Only displaying stages for which actual database records exist. Unreached stages marked as not yet recorded.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
+              {[
+                {
+                  stage: '01',
+                  name: 'TRAINING',
+                  isRecorded: trainingHistory.length > 0,
+                  detail: trainingHistory.length > 0 ? `${trainingHistory[0].programme}` : 'Not yet recorded',
+                  status: trainingHistory.some((t) => t.isCompleted) ? 'Completed' : trainingHistory.length > 0 ? 'In Progress' : 'Pending',
+                },
+                {
+                  stage: '02',
+                  name: 'CERTIFICATION',
+                  isRecorded: certifications.length > 0,
+                  detail: certifications.length > 0 ? `${certifications[0].name}` : 'Not yet recorded',
+                  status: certifications.length > 0 ? 'Verified Credential' : 'Pending Assessment',
+                },
+                {
+                  stage: '03',
+                  name: 'EMPLOYMENT',
+                  isRecorded: Boolean(activeEmployment || trainee.employmentStatus === 'EMPLOYED'),
+                  detail: activeEmployment ? `${activeEmployment.jobTitle} at ${activeEmployment.employerName}` : 'Not yet recorded',
+                  status: activeEmployment ? 'Active Placement' : 'Pending Placement',
+                },
+                {
+                  stage: '04',
+                  name: 'RETENTION',
+                  isRecorded: completedFollowUps.length > 0,
+                  detail: completedFollowUps.length > 0 ? `${completedFollowUps.length} Verified Survey(s)` : 'Not yet recorded',
+                  status: completedFollowUps.length > 0 ? 'Retention Confirmed' : 'Scheduled Follow-up',
+                },
+                {
+                  stage: '05',
+                  name: 'GROWTH',
+                  isRecorded: Boolean(salaryProgression && salaryProgression.hasSufficientRecords && salaryProgression.percentChange > 0),
+                  detail: salaryProgression?.hasSufficientRecords ? `+${salaryProgression.percentChange}% Observed Lift` : 'Not yet recorded',
+                  status: salaryProgression?.hasSufficientRecords ? 'Progression Logged' : 'Awaiting Data',
+                },
+              ].map((step) => (
+                <div
+                  key={step.stage}
+                  className={`p-3.5 rounded-lg border text-xs font-mono flex flex-col justify-between transition ${
+                    step.isRecorded
+                      ? 'border-[#087F8C] bg-[#E7F5F4]/40'
+                      : 'border-[#DCE3E7] bg-slate-50 opacity-80'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[10px] font-bold text-[#5E6B75]">{step.stage}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                        step.isRecorded ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'
+                      }`}>
+                        {step.status}
+                      </span>
+                    </div>
+                    <span className="font-serif font-bold text-xs text-[#16212B] block">{step.name}</span>
+                    <p className="text-[11px] text-[#5E6B75] mt-1 line-clamp-2">{step.detail}</p>
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-[#DCE3E7]/60 text-[10px] text-[#5E6B75]">
+                    {step.isRecorded ? '✓ Verified in PostgreSQL' : '○ Not yet recorded'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Chronological Outcome History */}
+          <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+            <h3 className="font-serif font-bold text-base text-[#16212B] mb-4 flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-[#087F8C]" />
+              <span>Chronological Outcome History</span>
+              <span className="text-xs font-mono text-[#5E6B75] font-normal">({journeyEvents.length} events logged)</span>
+            </h3>
+
+            {journeyEvents.length > 0 ? (
+              <div className="space-y-3 relative before:absolute before:inset-0 before:left-3 before:w-0.5 before:bg-[#DCE3E7]">
+                {journeyEvents.map((event, idx) => (
+                  <div key={idx} className="relative flex items-start gap-4 pl-8 text-xs font-mono">
+                    <div className="absolute left-1.5 top-1.5 w-3.5 h-3.5 rounded-full bg-white border-2 border-[#087F8C] shrink-0" />
+                    <div className="flex-1 p-3.5 bg-[#FAF7EE] border border-[#DCE3E7] rounded-lg">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                        <span className="font-bold text-[#16212B] text-sm">{event.title}</span>
+                        <span className="text-[10px] font-mono text-[#5E6B75]">{event.date}</span>
+                      </div>
+                      <div className="text-[11px] text-[#5E6B75] mt-1 flex flex-wrap items-center gap-2">
+                        <span className="px-2 py-0.5 rounded bg-white border border-[#DCE3E7] font-semibold text-[#18324A]">
+                          {event.type}
+                        </span>
+                        <span>•</span>
+                        <span>{event.organization}</span>
+                        <span>•</span>
+                        <span className="text-emerald-700 font-medium">{event.status}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-xs font-mono text-[#5E6B75] border border-dashed border-[#DCE3E7] rounded-lg">
+                <p>No outcome history records logged yet.</p>
+              </div>
+            )}
+          </div>
+
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 5: FOLLOW-UP SYSTEM & ACTION LEDGER                                   */}
+      {/* ========================================================================= */}
+      {activeTab === 'followups' && (
+        <div className="space-y-6 animate-in fade-in duration-150">
+          
+          {/* Header */}
+          <div className="p-4 bg-white border border-[#DCE3E7] rounded-lg">
+            <h2 className="text-lg font-serif font-bold text-[#16212B]">
+              Longitudinal Outcome Follow-up Registry & Action Ledger
+            </h2>
+            <p className="text-xs font-mono text-[#5E6B75] mt-0.5">
+              Structured retention pulses and verified audit records tracked via Supabase Edge Function & RPC.
+            </p>
+          </div>
+
+          {/* Pending Follow-ups */}
+          <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+            <h3 className="font-serif font-bold text-base text-[#16212B] mb-3 flex items-center gap-2">
+              <ClipboardList className="w-4 h-4 text-amber-600" />
+              <span>Assigned Follow-ups Requiring Response</span>
+              <span className="text-xs font-mono text-[#5E6B75] font-normal">({pendingFollowUps.length})</span>
+            </h3>
+
+            {pendingFollowUps.length > 0 ? (
+              <div className="space-y-3">
+                {pendingFollowUps.map((fu) => (
+                  <div key={fu.id} className="p-4 border border-amber-200 bg-amber-50/40 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                          {fu.status}
+                        </span>
+                        <span className="text-[#5E6B75]">ID: {fu.id}</span>
+                      </div>
+                      <p className="text-[#16212B] font-bold mt-1 text-sm">
+                        {fu.notes || 'Scheduled Longitudinal Employment & Skill Retention Review'}
+                      </p>
+                      <p className="text-[11px] text-[#5E6B75] mt-0.5">
+                        Scheduled Date: {new Date(fu.scheduledAt).toLocaleDateString('en-GB')}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setSelectedFollowUpId(fu.id);
+                        setIsSurveyModalOpen(true);
+                      }}
+                      className="px-4 py-2 bg-[#18324A] hover:bg-[#263B52] text-white rounded text-xs font-mono font-bold flex items-center gap-1.5 shrink-0 cursor-pointer shadow-2xs"
+                    >
+                      <FileCheck className="w-3.5 h-3.5" />
+                      <span>Complete Survey</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-6 text-xs font-mono text-[#5E6B75] border border-dashed border-[#DCE3E7] rounded-lg">
+                <p>No follow-ups are currently assigned.</p>
+              </div>
+            )}
+          </div>
+
+          {/* Completed Follow-ups History */}
+          <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+            <h3 className="font-serif font-bold text-base text-[#16212B] mb-3 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              <span>Completed Follow-up Submissions</span>
+              <span className="text-xs font-mono text-[#5E6B75] font-normal">({completedFollowUps.length})</span>
+            </h3>
+
+            {completedFollowUps.length > 0 ? (
+              <div className="space-y-3">
+                {completedFollowUps.map((fu) => (
+                  <div key={fu.id} className="p-4 border border-[#DCE3E7] bg-[#FAF7EE] rounded-lg text-xs font-mono">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                          {fu.status}
+                        </span>
+                        <span className="text-[#5E6B75]">ID: {fu.id}</span>
+                      </div>
+                      <span className="text-[11px] text-[#5E6B75]">
+                        Date: {new Date(fu.scheduledAt).toLocaleDateString('en-GB')}
+                      </span>
+                    </div>
+                    <p className="text-[#16212B] font-medium">{fu.notes}</p>
+                    <div className="mt-3 pt-2 border-t border-[#DCE3E7] grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] text-[#5E6B75]">
+                      <div>
+                        <span>Status: </span>
+                        <strong className="text-[#16212B]">{fu.employmentStatus || 'Employed'}</strong>
+                      </div>
+                      <div>
+                        <span>Salary: </span>
+                        <strong className="text-[#16212B]">{fu.monthlySalary ? `₹${fu.monthlySalary}` : 'Recorded'}</strong>
+                      </div>
+                      <div>
+                        <span>Retention: </span>
+                        <strong className="text-[#16212B]">{fu.retentionStatus || 'Retained'}</strong>
+                      </div>
+                      <div>
+                        <span>Skill Alignment: </span>
+                        <strong className="text-[#16212B]">{fu.skillRelevance || 'Relevant'}</strong>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-6 text-xs font-mono text-[#5E6B75] border border-dashed border-[#DCE3E7] rounded-lg">
+                <p>No completed follow-ups recorded yet.</p>
+              </div>
+            )}
+          </div>
+
+          {/* Action Ledger */}
+          <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+            <h3 className="font-serif font-bold text-base text-[#16212B] mb-2 flex items-center gap-2">
+              <FileCheck className="w-4 h-4 text-[#087F8C]" />
+              <span>Immutable Action Ledger</span>
+            </h3>
+            <p className="text-[11px] font-mono text-[#5E6B75] mb-4">
+              Real aggregated registry entries from training, certification, follow-ups, and outcome logs.
+            </p>
+
+            {journeyEvents.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs font-mono border-collapse">
+                  <thead>
+                    <tr className="border-b border-[#DCE3E7] text-left text-[#5E6B75] bg-slate-50">
+                      <th className="py-2.5 px-3">Date</th>
+                      <th className="py-2.5 px-3">Event / Action</th>
+                      <th className="py-2.5 px-3">Category</th>
+                      <th className="py-2.5 px-3">Organization</th>
+                      <th className="py-2.5 px-3">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {journeyEvents.map((item, idx) => (
+                      <tr key={idx} className="border-b border-[#DCE3E7] hover:bg-slate-50/50">
+                        <td className="py-2.5 px-3 text-[#5E6B75] whitespace-nowrap">{item.date}</td>
+                        <td className="py-2.5 px-3 font-bold text-[#16212B]">{item.title}</td>
+                        <td className="py-2.5 px-3">
+                          <span className="px-2 py-0.5 rounded text-[10px] bg-white border border-[#DCE3E7]">
+                            {item.type}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-[#5E6B75]">{item.organization}</td>
+                        <td className="py-2.5 px-3">
+                          <span className="text-emerald-700 font-bold">{item.status}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-center py-6 text-xs font-mono text-[#5E6B75] border border-dashed border-[#DCE3E7] rounded-lg">
+                <p>No action ledger records available.</p>
+              </div>
+            )}
+          </div>
+
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 6: SKILL GAPS & COMPETENCY REGISTRY                                    */}
+      {/* ========================================================================= */}
+      {activeTab === 'skills' && (
+        <div className="space-y-6 animate-in fade-in duration-150">
+          
+          {/* Header */}
+          <div className="p-4 bg-white border border-[#DCE3E7] rounded-lg">
+            <h2 className="text-lg font-serif font-bold text-[#16212B]">
+              Competency Evaluation & Skill Gap Analysis
+            </h2>
+            <p className="text-xs font-mono text-[#5E6B75] mt-0.5">
+              Assessed skill benchmarks and recommended interventions from authorized training providers.
+            </p>
+          </div>
+
+          {skillActionNotice && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded text-xs font-mono text-emerald-800 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{skillActionNotice}</span>
+            </div>
+          )}
+
+          <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+            <h3 className="font-serif font-bold text-base text-[#16212B] mb-4 flex items-center gap-2">
+              <Zap className="w-4 h-4 text-[#087F8C]" />
+              <span>Assessed Skills</span>
+              <span className="text-xs font-mono text-[#5E6B75] font-normal">({skillGaps.length} competencies)</span>
+            </h3>
+
+            {skillGaps.length > 0 ? (
+              <div className="space-y-4">
+                {skillGaps.map((sg) => {
+                  const score = Math.round(sg.overallScore);
+                  const benchmark = 80;
+                  const gap = score - benchmark;
+                  const statusLabel = gap > 0 ? 'Exceeds Benchmark' : gap === 0 ? 'At Benchmark' : 'Below Benchmark';
+                  const isBelow = gap < 0;
+
+                  return (
+                    <div key={sg.id} className="p-4 border border-[#DCE3E7] rounded-lg bg-[#FAF7EE] text-xs font-mono space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                          <h4 className="font-serif font-bold text-sm text-[#16212B]">{sg.skillName}</h4>
+                          <span className="text-[11px] text-[#5E6B75]">
+                            Assessed by: {sg.assessorType} • Date: {new Date(sg.assessmentDate).toLocaleDateString('en-GB')}
                           </span>
                         </div>
-
-                        {/* Benchmark & Score Status Pill */}
-                        <div className="flex items-center justify-between pt-2">
-                          <div className="text-xs font-mono text-[#0F253B] flex items-center gap-1.5">
-                            <span>Candidate Score: <strong>{skill.score}%</strong></span>
-                            <span>·</span>
-                            <span className="text-[#52667A]">Benchmark: {skill.benchmark}%</span>
-                          </div>
-                          <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
-                            isExceeds 
-                              ? 'bg-[#D8EEDF] text-[#164627] border border-[#B6DBC0]' 
-                              : isAt 
-                              ? 'bg-[#E0F2FE] text-[#0369A1] border border-[#BAE6FD]' 
-                              : 'bg-[#FEE2E2] text-[#991B1B] border border-[#FECACA]'
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            isBelow ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-emerald-100 text-emerald-900'
                           }`}>
-                            {skill.gap > 0 ? `+${skill.gap}%` : `${skill.gap}%`} · [{skill.statusLabel}]
+                            {statusLabel}
                           </span>
-                        </div>
-
-                        {/* Visual Progress Bar */}
-                        <div className="w-full bg-[#EDE8D5] h-3 rounded-full overflow-hidden relative mt-2">
-                          <div
-                            className={`h-full rounded-full transition-all duration-500 ${
-                              isExceeds ? 'bg-[#15803D]' : isAt ? 'bg-[#0284C7]' : 'bg-[#D97706]'
-                            }`}
-                            style={{ width: `${Math.min(skill.score, 100)}%` }}
-                          />
-                        </div>
-
-                        {/* Recommended Action / Curriculum Stage */}
-                        <div className="pt-2 text-xs text-[#52667A]">
-                          <span className="font-mono text-[10px] uppercase tracking-wider block text-[#7A8C9E]">
-                            Recommended Action:
-                          </span>
-                          <span className="font-medium text-[#263B52]">
-                            {skill.recommendedAction}
+                          <span className="px-2 py-0.5 rounded text-[10px] bg-slate-200 text-slate-800">
+                            Severity: {sg.severity}
                           </span>
                         </div>
                       </div>
 
-                      {/* Card Action Button */}
-                      <div className="pt-2 border-t border-[#EDE8D5] flex items-center justify-end">
+                      {/* Score Comparison Bar */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-[11px]">
+                          <span>Current Observed Score: <strong className="text-[#16212B]">{score}%</strong></span>
+                          <span>Industry Benchmark: <strong className="text-[#5E6B75]">{benchmark}%</strong></span>
+                          <span className={gap >= 0 ? 'text-emerald-700 font-bold' : 'text-amber-700 font-bold'}>
+                            Gap: {gap >= 0 ? `+${gap}%` : `${gap}%`}
+                          </span>
+                        </div>
+                        <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden flex">
+                          <div
+                            className={`h-full ${isBelow ? 'bg-amber-500' : 'bg-[#087F8C]'}`}
+                            style={{ width: `${Math.min(score, 100)}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Intervention & Action */}
+                      <div className="pt-2 border-t border-[#DCE3E7] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px]">
+                        <div>
+                          <span className="text-[#5E6B75]">Recommended Action: </span>
+                          <span className="font-medium text-[#16212B]">
+                            {sg.interventionType || 'Standard Competency Upkeep'}
+                          </span>
+                        </div>
                         <button
-                          onClick={() => handleRequestAssessment(skill.name)}
-                          disabled={isSubmittingAction}
-                          className="px-3 py-1.5 bg-[#FAF7EE] hover:bg-white text-xs font-mono font-medium text-[#263B52] rounded border border-[#C5BDA0] transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                          onClick={() => handleRequestAssessment(sg.id, sg.skillName)}
+                          disabled={requestingSkillId === sg.id}
+                          className="px-3 py-1 bg-white border border-[#DCE3E7] hover:border-[#18324A] text-[#18324A] rounded font-bold transition flex items-center gap-1 cursor-pointer shrink-0 disabled:opacity-50"
                         >
-                          <Award className="w-3.5 h-3.5 text-[#263B52]" />
-                          <span>Request Assessment</span>
+                          {requestingSkillId === sg.id ? 'Scheduling...' : 'Request Re-Assessment'}
                         </button>
                       </div>
                     </div>
                   );
                 })}
               </div>
-            )}
-          </div>
-        )}
-
-        {/* ========================================================================= */}
-        {/* TAB 3 — ACTION LEDGER (Rendered ONLY when activeTab === 'ledger')          */}
-        {/* ========================================================================= */}
-        {activeTab === 'ledger' && (
-          <div className="bg-[#FAF7EE] border border-[#D5CEAE] rounded-b-lg p-5 sm:p-6 shadow-xs space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#D5CEAE] pb-4">
-              <div>
-                <span className="text-xs font-mono uppercase tracking-wider text-[#263B52] block">
-                  Section 03 · Action Ledger
-                </span>
-                <h2 className="text-lg font-serif font-bold text-[#0F253B]">
-                  Longitudinal Milestones & Follow-up History
-                </h2>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    setSelectedFollowUpId(`flw_${Date.now()}`);
-                    setIsSurveyModalOpen(true);
-                  }}
-                  className="px-3 py-1.5 bg-[#18324A] hover:bg-[#0F253B] text-white text-xs font-mono font-medium rounded flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
-                >
-                  <Calendar className="w-3.5 h-3.5 text-[#F3E8A8]" />
-                  <span>+ Complete Follow-up Survey</span>
-                </button>
-                <span className="text-xs font-mono text-[#15803D] bg-[#D8EEDF] px-2.5 py-1 rounded border border-[#B6DBC0] flex items-center gap-1 font-semibold">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>PostgreSQL Sync Verified</span>
-                </span>
-              </div>
-            </div>
-
-            {/* Chronological List of Real Events */}
-            {ledgerRecords.length === 0 ? (
-              <div className="p-8 text-center bg-white border border-[#D5CEAE] rounded-lg">
-                <Calendar className="w-10 h-10 text-[#52667A] mx-auto mb-2" />
-                <p className="text-sm font-bold text-[#0F253B]">No longitudinal records found.</p>
-              </div>
             ) : (
-              <div className="space-y-3.5">
-                {ledgerRecords.map((item) => {
-                  const isValidated = item.status === 'Validated' || item.status === 'Verified' || item.status === 'Completed';
-
-                  return (
-                    <div 
-                      key={item.id} 
-                      className="p-4 rounded-lg bg-white border border-[#D5CEAE] shadow-xs hover:border-[#263B52] transition-colors space-y-2.5"
-                    >
-                      {/* Top Meta Line: Date, Category Badge, Status */}
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-mono text-[#0F253B] font-bold flex items-center gap-1.5">
-                            <Calendar className="w-3.5 h-3.5 text-[#263B52]" />
-                            {item.date}
-                          </span>
-                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#FAF7EE] border border-[#C5BDA0] text-[#263B52] font-semibold uppercase">
-                            {item.category}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded flex items-center gap-1 ${
-                            isValidated 
-                              ? 'bg-[#D8EEDF] text-[#164627] border border-[#B6DBC0]' 
-                              : 'bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]'
-                          }`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${isValidated ? 'bg-[#15803D]' : 'bg-[#D97706]'}`} />
-                            Status: {item.status}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Content: Title & Description */}
-                      <div>
-                        <h3 className="text-sm font-bold text-[#0F253B] flex items-center gap-1.5">
-                          {item.category === 'Wage Enhancement' && <TrendingUp className="w-4 h-4 text-[#15803D]" />}
-                          {item.category === 'Certification' && <Award className="w-4 h-4 text-[#0284C7]" />}
-                          {item.category === 'Employment Validation' && <Briefcase className="w-4 h-4 text-[#263B52]" />}
-                          <span>{item.title}</span>
-                        </h3>
-                        <p className="text-xs text-[#4A5D70] leading-relaxed mt-1">
-                          {item.description}
-                        </p>
-                      </div>
-
-                      {/* Footer: Organization & Action Button */}
-                      <div className="pt-2 border-t border-[#FAF7EE] flex flex-wrap items-center justify-between gap-2 text-xs">
-                        <span className="text-[11px] font-mono text-[#687C92] flex items-center gap-1">
-                          <Building2 className="w-3 h-3 text-[#263B52]" />
-                          {item.organization}
-                        </span>
-
-                        {item.actionType === 'follow_up' && (
-                          <button
-                            onClick={() => {
-                              setSelectedFollowUpId(item.id);
-                              setIsSurveyModalOpen(true);
-                            }}
-                            className="px-3 py-1 bg-[#263B52] hover:bg-[#0F253B] text-white text-xs font-mono font-medium rounded transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
-                          >
-                            <span>{item.actionText}</span>
-                            <ArrowUpRight className="w-3 h-3" />
-                          </button>
-                        )}
-
-                        {item.actionType === 'modal' && (
-                          <button
-                            onClick={() => setIsModalOpen(true)}
-                            className="px-3 py-1 bg-[#15803D] hover:bg-[#116631] text-white text-xs font-mono font-medium rounded transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
-                          >
-                            <span>Update Outcome & Wage</span>
-                            <ArrowUpRight className="w-3 h-3" />
-                          </button>
-                        )}
-
-                        {item.actionType === 'none' && item.actionText && (
-                          <span className="text-xs font-mono text-[#15803D] font-semibold">
-                            {item.actionText}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+              <div className="text-center py-8 text-xs font-mono text-[#5E6B75] border border-dashed border-[#DCE3E7] rounded-lg">
+                <p>Your current records do not show an identified skill gap.</p>
               </div>
             )}
           </div>
-        )}
 
-      </main>
+        </div>
+      )}
 
-      {/* Outcome Verification Modal */}
-      <OutcomeVerificationModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        profile={profile}
-        onSuccess={handleVerificationSuccess}
-      />
-
-      {/* Trainee Profile & DPDP Consent Modal */}
-      <TraineeProfileModal
-        isOpen={isProfileModalOpen}
-        onClose={() => setIsProfileModalOpen(false)}
-        traineeId={profile.id}
-        initialData={{
-          name: profile.name,
-          contactNumber: dossier?.trainee?.contactNumber || undefined,
-          education: dossier?.trainee?.education || undefined,
-          district: dossier?.trainee?.district || undefined,
-          state: dossier?.trainee?.state || undefined,
-          region: dossier?.trainee?.region || undefined,
-          currentOccupation: dossier?.trainee?.currentOccupation || undefined,
-          experienceYears: dossier?.trainee?.experienceYears || undefined,
-          skills: dossier?.trainee?.skills || undefined,
-          consentStatus: dossier?.trainee?.consentStatus || undefined,
-        }}
-        onSuccess={async () => {
-          setActionNotice('Trainee profile and DPDP outcome tracking consent updated in PostgreSQL.');
-          await loadTraineeData();
-          setTimeout(() => setActionNotice(null), 4000);
-        }}
-      />
+      {/* ========================================================================= */}
+      {/* MODALS                                                                    */}
+      {/* ========================================================================= */}
+      {/* Profile & Consent Modal */}
+      {isProfileModalOpen && (
+        <TraineeProfileModal
+          isOpen={isProfileModalOpen}
+          onClose={() => setIsProfileModalOpen(false)}
+          traineeId={trainee.id}
+          initialData={{
+            name: trainee.name,
+            contactNumber: trainee.contactNumber || '',
+            education: trainee.education || '',
+            district: trainee.district || '',
+            state: trainee.state || '',
+            region: trainee.region || '',
+            currentOccupation: trainee.currentOccupation || '',
+            experienceYears: trainee.experienceYears || 0,
+            skills: trainee.skills || [],
+            consentStatus: trainee.consentStatus || '',
+            consentTimestamp: trainee.consentTimestamp || '',
+          }}
+          onSuccess={() => loadTraineeData(true)}
+        />
+      )}
 
       {/* Follow-up Survey Modal */}
-      <FollowUpSurveyModal
-        isOpen={isSurveyModalOpen}
-        onClose={() => setIsSurveyModalOpen(false)}
-        followUpId={selectedFollowUpId}
-        traineeId={profile.id}
-        currentSalary={profile.currentSalary}
-        onSuccess={async () => {
-          setActionNotice('Follow-up survey response submitted and saved to PostgreSQL.');
-          await loadTraineeData();
-          setTimeout(() => setActionNotice(null), 4000);
-        }}
-      />
+      {isSurveyModalOpen && selectedFollowUpId && (
+        <FollowUpSurveyModal
+          isOpen={isSurveyModalOpen}
+          onClose={() => setIsSurveyModalOpen(false)}
+          followUpId={selectedFollowUpId}
+          traineeId={trainee.id}
+          currentSalary={activeEmployment?.monthlySalary}
+          onSuccess={() => {
+            loadTraineeData(true);
+            setSelectedFollowUpId('');
+          }}
+        />
+      )}
 
-      {/* Trainee Footer Ledger */}
-      <footer className="border-t border-[#D5CEAE] bg-[#FAF7EE] py-3.5 px-4 text-center text-xs font-mono text-[#687C92] mt-8">
-        KaushalSetu National Skill Registry · Authorized Trainee Credential Passport · Connected to PostgreSQL
-      </footer>
     </div>
   );
 }
-
-export default TraineeDashboard;

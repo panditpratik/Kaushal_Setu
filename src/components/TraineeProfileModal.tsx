@@ -40,13 +40,13 @@ export function TraineeProfileModal({
 }: TraineeProfileModalProps) {
   const [name, setName] = useState(initialData?.name || '');
   const [contactNumber, setContactNumber] = useState(initialData?.contactNumber || '');
-  const [education, setEducation] = useState(initialData?.education || 'ITI Diploma (Electrical)');
-  const [district, setDistrict] = useState(initialData?.district || 'Pune');
-  const [state, setState] = useState(initialData?.state || 'Maharashtra');
-  const [region, setRegion] = useState(initialData?.region || 'Western Zone');
-  const [currentOccupation, setCurrentOccupation] = useState(initialData?.currentOccupation || 'Sr. Industrial Electrician');
-  const [experienceYears, setExperienceYears] = useState<number>(initialData?.experienceYears || 2);
-  const [skillsStr, setSkillsStr] = useState((initialData?.skills || ['PLC Diagnostics', 'Control Wiring', 'Panel Maintenance']).join(', '));
+  const [education, setEducation] = useState(initialData?.education || '');
+  const [district, setDistrict] = useState(initialData?.district || '');
+  const [state, setState] = useState(initialData?.state || '');
+  const [region, setRegion] = useState(initialData?.region || '');
+  const [currentOccupation, setCurrentOccupation] = useState(initialData?.currentOccupation || '');
+  const [experienceYears, setExperienceYears] = useState<number>(initialData?.experienceYears ?? 0);
+  const [skillsStr, setSkillsStr] = useState((initialData?.skills || []).join(', '));
   
   const [consentGranted, setConsentGranted] = useState(
     initialData?.consentStatus ? initialData.consentStatus === 'CONSENTED' : true

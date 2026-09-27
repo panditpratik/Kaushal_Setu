@@ -4,6 +4,7 @@
 // If Supabase returns an error, a typed ApiError is raised for explicit UI handling.
 
 import { supabase } from './supabase';
+export { supabase };
 
 export class ApiError extends Error {
   status: number;
@@ -64,14 +65,30 @@ export interface TraineeDossier {
     selfEmploymentCategory?: string | null;
     selfEmploymentIncome?: number | null;
     apprenticeshipEmployer?: string | null;
+    unemploymentReason?: string | null;
+    unemploymentNotes?: string | null;
   };
   verification: { aadhaar: string; epfo: string };
   cohort: { name: string; trainingProvider: string } | null;
+  trainingHistory?: {
+    id: string;
+    cohortId: string;
+    programme: string;
+    providerName: string;
+    enrolledAt: string;
+    startDate: string;
+    endDate: string | null;
+    status: string;
+    isCompleted: boolean;
+  }[];
   certifications: {
+    id?: string;
     name: string;
     course: string;
+    issuingBody?: string;
     issuedAt: string;
     certificateNumber: string;
+    status?: string;
   }[];
   activeEmployment: {
     jobTitle: string;
@@ -79,6 +96,7 @@ export interface TraineeDossier {
     monthlySalary: number;
     tenureMonths: number | null;
     employmentType?: string | null;
+    startDate?: string;
   } | null;
   employmentRecords?: {
     id: string;
@@ -89,6 +107,16 @@ export interface TraineeDossier {
     startDate: string;
     endDate: string | null;
   }[];
+  salaryProgression?: {
+    hasSufficientRecords: boolean;
+    recordCount: number;
+    baselineSalary: number;
+    baselineDate: string;
+    currentSalary: number;
+    currentDate: string;
+    absoluteChange: number;
+    percentChange: number;
+  } | null;
   followUps?: {
     id: string;
     scheduledAt: string;
@@ -100,8 +128,26 @@ export interface TraineeDossier {
     skillRelevance?: string;
     roleRelevance?: string;
   }[];
+  skillGaps?: {
+    id: string;
+    skillName: string;
+    severity: 'LOW' | 'MEDIUM' | 'HIGH';
+    assessmentDate: string;
+    overallScore: number;
+    assessorType: string;
+    interventionType?: string;
+    providerName?: string;
+    interventionStatus?: string;
+  }[];
   trajectoryVelocity: { wageLiftPercent: number | null; tenureMonths: number | null };
   stages: DossierStage[];
+  journey?: {
+    date: string;
+    type: string;
+    title: string;
+    organization: string;
+    status: string;
+  }[];
 }
 
 export interface GovernmentAnalytics {
@@ -503,14 +549,18 @@ export const traineeService = {
     status: string;
     job_title?: string;
     employer_name?: string;
+    employment_type?: string;
     monthly_salary?: number;
     start_date?: string;
+    end_date?: string;
     district?: string;
     state?: string;
     is_self_employed?: boolean;
     self_employment_category?: string;
     is_apprenticeship?: boolean;
     apprenticeship_employer?: string;
+    unemployment_reason?: string;
+    unemployment_notes?: string;
     notes?: string;
   }) => {
     const { data, error } = await supabase.rpc('record_trainee_employment_update', {
