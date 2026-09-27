@@ -45,9 +45,25 @@ export interface TraineeDossier {
   trainee: {
     id: string;
     name: string;
+    email?: string;
     gender: string | null;
     aadhaarLinked: boolean;
     epfoId: string | null;
+    contactNumber?: string | null;
+    education?: string | null;
+    district?: string | null;
+    state?: string | null;
+    region?: string | null;
+    currentOccupation?: string | null;
+    experienceYears?: number | null;
+    skills?: string[] | null;
+    employmentStatus?: string | null;
+    consentStatus?: string | null;
+    consentTimestamp?: string | null;
+    consentVersion?: string | null;
+    selfEmploymentCategory?: string | null;
+    selfEmploymentIncome?: number | null;
+    apprenticeshipEmployer?: string | null;
   };
   verification: { aadhaar: string; epfo: string };
   cohort: { name: string; trainingProvider: string } | null;
@@ -62,12 +78,14 @@ export interface TraineeDossier {
     employerName: string;
     monthlySalary: number;
     tenureMonths: number | null;
+    employmentType?: string | null;
   } | null;
   employmentRecords?: {
     id: string;
     jobTitle: string;
     employerName: string;
     monthlySalary: number;
+    employmentType?: string | null;
     startDate: string;
     endDate: string | null;
   }[];
@@ -76,9 +94,72 @@ export interface TraineeDossier {
     scheduledAt: string;
     status: string;
     notes: string;
+    retentionStatus?: string;
+    employmentStatus?: string;
+    monthlySalary?: number;
+    skillRelevance?: string;
+    roleRelevance?: string;
   }[];
   trajectoryVelocity: { wageLiftPercent: number | null; tenureMonths: number | null };
   stages: DossierStage[];
+}
+
+export interface GovernmentAnalytics {
+  meta: {
+    calculatedAt: string;
+    callerUid?: string;
+    dataSource?: string;
+  };
+  funnel: {
+    totalTrained: number;
+    completed: number;
+    completionRate: number;
+    certified: number;
+    certificationRate: number;
+    placed: number;
+    placementRate: number;
+    placedVerified: number;
+    currentlyEmployed: number;
+    employmentRate: number;
+    retained: number;
+    retentionEligible: number;
+    retentionRate: number;
+    salaryProgression: {
+      medianBaseline: number;
+      medianCurrent: number;
+      medianDeltaPercent: number;
+      traineesWithIncreaseCount: number;
+      percentWithIncrease: number;
+    };
+  };
+  outcomeDistribution: {
+    type: string;
+    count: number;
+    percentage: number;
+  }[];
+  retentionTrend: {
+    milestone: string;
+    rate: number;
+    sampleSize: number;
+    verifiedCount: number;
+  }[];
+  skillGaps: {
+    skillName: string;
+    severity: 'LOW' | 'MEDIUM' | 'HIGH';
+    traineeCount: number;
+    avgScore: number;
+  }[];
+  providerComparison: {
+    providerId: string;
+    providerName: string;
+    accreditationId: string;
+    totalTrainees: number;
+    completionRate: number;
+    certificationRate: number;
+    placementRate: number;
+    avgSalary: number;
+  }[];
+  data: DistrictMetric[];
 }
 
 export interface OutcomesSummary {
@@ -363,6 +444,69 @@ export const traineeService = {
     }
     return data || [];
   },
+
+  // Profile and DPDP Consent update
+  updateProfileAndConsent: async (payload: {
+    trainee_id?: string;
+    name?: string;
+    contact_number?: string;
+    education?: string;
+    district?: string;
+    state?: string;
+    region?: string;
+    current_occupation?: string;
+    experience_years?: number;
+    skills?: string[];
+    consent_status?: string;
+    consent_version?: string;
+  }) => {
+    const { data, error } = await supabase.rpc('update_trainee_profile_and_consent', {
+      p_data: payload,
+    });
+    if (error) handleSupabaseError(error, 'Failed to update trainee profile and consent in database');
+    return data;
+  },
+
+  // Employment and Wage enhancement update
+  recordEmploymentUpdate: async (payload: {
+    trainee_id?: string;
+    status: string;
+    job_title?: string;
+    employer_name?: string;
+    monthly_salary?: number;
+    start_date?: string;
+    district?: string;
+    state?: string;
+    is_self_employed?: boolean;
+    self_employment_category?: string;
+    is_apprenticeship?: boolean;
+    apprenticeship_employer?: string;
+    notes?: string;
+  }) => {
+    const { data, error } = await supabase.rpc('record_trainee_employment_update', {
+      p_data: payload,
+    });
+    if (error) handleSupabaseError(error, 'Failed to record employment update in database');
+    return data;
+  },
+
+  // Longitudinal Follow-Up survey submission
+  submitFollowUpSurvey: async (payload: {
+    trainee_id?: string;
+    followUpId?: string;
+    employment_status: string;
+    monthly_salary?: number;
+    retention_status: string;
+    skill_relevance?: string;
+    role_relevance?: string;
+    reason_notes?: string;
+  }) => {
+    const { data, error } = await supabase.rpc('submit_trainee_follow_up_survey', {
+      p_data: payload,
+    });
+    if (error) handleSupabaseError(error, 'Failed to submit follow-up survey in database');
+    return data;
+  },
 };
 
 export const employerService = {
@@ -429,7 +573,18 @@ export const providerService = {
 
     if (Array.isArray(data)) return data as ProviderBatch[];
     if (data && Array.isArray((data as any).data)) return (data as any).data as ProviderBatch[];
+    if (data && Array.isArray((data as any).batches)) return (data as any).batches as ProviderBatch[];
     return [];
+  },
+
+  // Extended provider outcome intelligence
+  getProviderAnalytics: async (id?: string): Promise<any> => {
+    const providerParam = id || 'default';
+    const { data, error } = await supabase.rpc('get_provider_batches', {
+      p_provider_id: providerParam,
+    });
+    if (error) handleSupabaseError(error, 'Failed to load provider analytics');
+    return data;
   },
 
   // Write operation via Supabase Edge Function: deploy-intervention
@@ -453,7 +608,7 @@ export const governmentService = {
   // Read operation via PostgreSQL RPC function: get_government_analytics
   getAnalytics: async (
     filters: { district?: string; programme?: string; provider?: string; outcome?: string } = {}
-  ): Promise<{ meta: any; data: DistrictMetric[] }> => {
+  ): Promise<GovernmentAnalytics> => {
     const district = !filters.district || filters.district === 'All' ? null : filters.district;
     const programme = !filters.programme || filters.programme === 'All' ? null : filters.programme;
     const provider = !filters.provider || filters.provider === 'All' ? null : filters.provider;
@@ -470,8 +625,22 @@ export const governmentService = {
       handleSupabaseError(error, 'Failed to load government analytics');
     }
 
-    const payload = data as { meta: any; data: DistrictMetric[] };
-    return { meta: payload?.meta || {}, data: payload?.data || [] };
+    return data as GovernmentAnalytics;
+  },
+
+  // Supabase Realtime subscription for live longitudinal outcome events
+  subscribeToAnalytics: (onUpdate: () => void) => {
+    const channel = supabase
+      .channel('gov-outcomes-realtime-' + Math.random().toString(36).slice(2, 7))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'outcomes' }, () => onUpdate())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employment_records' }, () => onUpdate())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'follow_ups' }, () => onUpdate())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trainees' }, () => onUpdate())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   },
 
   // Transactional action via PostgreSQL RPC function: record_programme_action
