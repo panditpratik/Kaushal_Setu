@@ -4,6 +4,18 @@ export type TraineeTab = 'overview' | 'training' | 'outcomes' | 'journey' | 'fol
 
 export type ProviderTab = 'overview' | 'programmes' | 'trainees' | 'training-records' | 'outcomes' | 'skills' | 'non-placement';
 
+export type GovernmentTab = 
+  | 'overview' 
+  | 'analytics' 
+  | 'programmes' 
+  | 'providers' 
+  | 'districts' 
+  | 'skills' 
+  | 'non-placement' 
+  | 'attrition' 
+  | 'interventions' 
+  | 'follow-ups';
+
 export type AppView = 
   | 'landing' 
   | 'login' 

@@ -1,1197 +1,1678 @@
-import { useState, useEffect, useCallback } from 'react';
-import { governmentService, type GovernmentAnalytics, type DistrictMetric } from '../lib/api';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import type { GovernmentTab } from '../types';
+import { 
+  governmentService, 
+  type GovernmentOutcomeIntelligence 
+} from '../lib/api';
 import { 
   CheckCircle2, 
   Filter, 
-  BarChart3, 
   Download, 
-  CheckSquare, 
   AlertTriangle, 
   RefreshCw,
-  TrendingUp,
-  Users,
-  Award,
-  Briefcase,
-  ShieldCheck,
-  HelpCircle,
-  X,
-  Activity,
-  ArrowRight,
-  BookOpen,
-  Clock
+  TrendingUp, 
+  Users, 
+  Award, 
+  Briefcase, 
+  ShieldCheck, 
+  HelpCircle, 
+  X, 
+  Clock,
+  PlusCircle,
+  ChevronRight,
+  ArrowUpRight,
+  AlertCircle,
+  BookOpen
 } from 'lucide-react';
 
 interface GovernmentDashboardProps {
-  onNavigateHome: () => void;
-  onSwitchRole: (role: string) => void;
+  onNavigateHome?: () => void;
+  onSwitchRole?: (role: string) => void;
+  activeTab?: GovernmentTab;
+  onTabChange?: (tab: GovernmentTab) => void;
 }
 
-export function GovernmentDashboard({ onNavigateHome, onSwitchRole }: GovernmentDashboardProps) {
-  const [selectedDistrict, setSelectedDistrict] = useState('All');
-  const [selectedProgramme, setSelectedProgramme] = useState('All');
-  const [selectedProvider, setSelectedProvider] = useState('All');
-  const [analytics, setAnalytics] = useState<GovernmentAnalytics | null>(null);
-  const [districts, setDistricts] = useState<DistrictMetric[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [actionNotice, setActionNotice] = useState<string | null>(null);
-  const [actionRecorded, setActionRecorded] = useState(false);
-  const [isDefinitionModalOpen, setIsDefinitionModalOpen] = useState(false);
-  const [lastRealtimeSync, setLastRealtimeSync] = useState<string>(() => new Date().toLocaleTimeString());
-  const [realtimePulse, setRealtimePulse] = useState(false);
+export function GovernmentDashboard({ 
+  onNavigateHome: _onNavigateHome, 
+  onSwitchRole: _onSwitchRole,
+  activeTab = 'overview',
+  onTabChange 
+}: GovernmentDashboardProps) {
+  // Filters (server-side propagated)
+  const [timeRange, setTimeRange] = useState<string>('all');
+  const [selectedDistrict, setSelectedDistrict] = useState<string>('All');
+  const [selectedProgramme, setSelectedProgramme] = useState<string>('All');
+  const [selectedProvider, setSelectedProvider] = useState<string>('All');
 
-  const loadAnalytics = useCallback(async (isRealtimeUpdate = false) => {
-    if (!isRealtimeUpdate) setLoading(true);
+  // Skill Gap Tab Specific Filter
+  const [skillSort, setSkillSort] = useState<'affected' | 'gap' | 'severity'>('affected');
+
+  // Data States
+  const [intelligence, setIntelligence] = useState<GovernmentOutcomeIntelligence | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastSync, setLastSync] = useState<string>(() => new Date().toLocaleTimeString());
+  const [realtimePulse, setRealtimePulse] = useState<boolean>(false);
+
+  // Modals & Panels
+  const [isMethodologyOpen, setIsMethodologyOpen] = useState<boolean>(false);
+  const [isNewInterventionOpen, setIsNewInterventionOpen] = useState<boolean>(false);
+  const [selectedInterventionForUpdate, setSelectedInterventionForUpdate] = useState<any | null>(null);
+  const [actionSuccessNotice, setActionSuccessNotice] = useState<string | null>(null);
+
+  // Form States for Interventions
+  const [newIntervention, setNewIntervention] = useState({
+    targetType: 'PROGRAMME',
+    targetName: '',
+    issueType: 'SKILL_DEFICIT',
+    description: '',
+    actionTaken: '',
+    followUpDate: '',
+  });
+
+  const [updateInterventionForm, setUpdateInterventionForm] = useState({
+    status: 'ACTION_RECORDED',
+    actionTaken: '',
+    followUpDate: '',
+    observedOutcomeNotes: '',
+  });
+
+  // Fetch Government Outcome Intelligence from PostgreSQL RPC
+  const fetchIntelligence = useCallback(async (isRealtime = false) => {
+    if (!isRealtime) setLoading(true);
     setError(null);
     try {
-      const res = await governmentService.getAnalytics({
+      const data = await governmentService.getOutcomeIntelligence({
+        timeRange,
         district: selectedDistrict,
         programme: selectedProgramme,
         provider: selectedProvider,
       });
-      setAnalytics(res);
-      setDistricts(res.data || []);
-      setLastRealtimeSync(new Date().toLocaleTimeString());
-      if (isRealtimeUpdate) {
+      setIntelligence(data);
+      setLastSync(new Date().toLocaleTimeString());
+      if (isRealtime) {
         setRealtimePulse(true);
-        setTimeout(() => setRealtimePulse(false), 2000);
+        setTimeout(() => setRealtimePulse(false), 2500);
       }
     } catch (err: any) {
-      console.error('Failed to load government analytics:', err);
-      setError(err.message || 'Unable to load government analytics from PostgreSQL.');
+      console.error('Failed to fetch government outcome intelligence:', err);
+      setError(err.message || 'Error communicating with PostgreSQL sovereign node.');
     } finally {
       setLoading(false);
     }
-  }, [selectedDistrict, selectedProgramme, selectedProvider]);
+  }, [timeRange, selectedDistrict, selectedProgramme, selectedProvider]);
 
-  // Initial load and filter updates
+  // Initial & Filter Change Load
   useEffect(() => {
-    loadAnalytics();
-  }, [loadAnalytics]);
+    fetchIntelligence();
+  }, [fetchIntelligence]);
 
-  // Supabase Realtime subscription
+  // Realtime Subscriptions to Supabase PostgreSQL Tables
   useEffect(() => {
     const unsubscribe = governmentService.subscribeToAnalytics(() => {
-      console.log('Realtime outcome event detected, invalidating & refetching aggregate metrics...');
-      loadAnalytics(true);
+      console.log('Realtime change event received in Government Telemetry Node. Invalidating RPC cache...');
+      fetchIntelligence(true);
     });
     return () => {
       unsubscribe();
     };
-  }, [loadAnalytics]);
+  }, [fetchIntelligence]);
 
-  const handleRecordProgrammeAction = async () => {
+  // Record New Intervention Area
+  const handleRecordInterventionSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newIntervention.targetName.trim() || !newIntervention.description.trim()) {
+      alert('Target name and signal description are mandatory.');
+      return;
+    }
     try {
-      await governmentService.recordAction({
-        actionType: 'PROGRAMME_ACTION_RECORDED',
-        district: selectedDistrict,
-        amount: '₹14,50,000',
-        notes: `Policy milestone action confirmed for ${selectedDistrict} cluster.`,
+      await governmentService.recordIntervention({
+        targetType: newIntervention.targetType,
+        targetName: newIntervention.targetName.trim(),
+        issueType: newIntervention.issueType,
+        description: newIntervention.description.trim(),
+        actionTaken: newIntervention.actionTaken.trim() || undefined,
+        followUpDate: newIntervention.followUpDate || undefined,
       });
-      setActionRecorded(true);
-      setActionNotice('Programme action recorded: Audit log saved to PostgreSQL.');
-      setTimeout(() => setActionNotice(null), 4000);
+      setIsNewInterventionOpen(false);
+      setNewIntervention({
+        targetType: 'PROGRAMME',
+        targetName: '',
+        issueType: 'SKILL_DEFICIT',
+        description: '',
+        actionTaken: '',
+        followUpDate: '',
+      });
+      setActionSuccessNotice('Intervention area recorded to sovereign registry.');
+      setTimeout(() => setActionSuccessNotice(null), 4000);
+      fetchIntelligence(true);
     } catch (err: any) {
-      setActionNotice(`Action failed: ${err.message}`);
+      alert('Failed to record intervention: ' + (err.message || 'Database error'));
     }
   };
 
-  const handleExportData = () => {
-    if (!analytics) return;
-    const jsonStr = JSON.stringify(analytics, null, 2);
-    const blob = new Blob([jsonStr], { type: 'application/json' });
+  // Update Existing Intervention
+  const handleUpdateInterventionSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedInterventionForUpdate) return;
+    try {
+      await governmentService.updateIntervention({
+        id: selectedInterventionForUpdate.id,
+        status: updateInterventionForm.status,
+        actionTaken: updateInterventionForm.actionTaken.trim() || undefined,
+        followUpDate: updateInterventionForm.followUpDate || undefined,
+        observedOutcomeNotes: updateInterventionForm.observedOutcomeNotes.trim() || undefined,
+      });
+      setSelectedInterventionForUpdate(null);
+      setActionSuccessNotice('Intervention record updated in sovereign registry.');
+      setTimeout(() => setActionSuccessNotice(null), 4000);
+      fetchIntelligence(true);
+    } catch (err: any) {
+      alert('Failed to update intervention: ' + (err.message || 'Database error'));
+    }
+  };
+
+  // Unique list of options from returned intelligence
+  const districtOptions = useMemo(() => {
+    if (!intelligence?.districts) return [];
+    return intelligence.districts.map(d => d.district).filter(d => d !== 'District not recorded');
+  }, [intelligence]);
+
+  const programmeOptions = useMemo(() => {
+    if (!intelligence?.programmes) return [];
+    return Array.from(new Set(intelligence.programmes.map(p => p.courseTitle)));
+  }, [intelligence]);
+
+  const providerOptions = useMemo(() => {
+    if (!intelligence?.providers) return [];
+    return Array.from(new Set(intelligence.providers.map(p => p.providerName)));
+  }, [intelligence]);
+
+  // Skill Gaps sorted factual view
+  const sortedSkillGaps = useMemo(() => {
+    if (!intelligence?.skillGaps) return [];
+    const list = [...intelligence.skillGaps];
+    if (skillSort === 'affected') {
+      return list.sort((a, b) => b.affectedTraineesCount - a.affectedTraineesCount);
+    } else if (skillSort === 'gap') {
+      return list.sort((a, b) => b.gap - a.gap);
+    } else if (skillSort === 'severity') {
+      const weight: Record<string, number> = { HIGH: 3, MEDIUM: 2, LOW: 1 };
+      return list.sort((a, b) => (weight[b.severity] || 0) - (weight[a.severity] || 0));
+    }
+    return list;
+  }, [intelligence?.skillGaps, skillSort]);
+
+  // Helper for Exporting Aggregate Telemetry JSON
+  const handleExportTelemetry = () => {
+    if (!intelligence) return;
+    const blob = new Blob([JSON.stringify(intelligence, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `KaushalSetu-Government-Analytics-${selectedDistrict.replace(/\s+/g, '-')}.json`;
+    a.download = `KaushalSetu-Government-Telemetry-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    setActionNotice('Government aggregate intelligence exported as JSON.');
-    setTimeout(() => setActionNotice(null), 3000);
   };
 
-  if (loading && !analytics) {
-    return (
-      <div className="min-h-screen bg-[#FAF9F5] text-[#16212B] flex flex-col items-center justify-center p-8">
-        <div className="w-12 h-12 rounded-full border-4 border-[#18324A] border-t-transparent animate-spin mb-4" />
-        <p className="font-mono text-sm text-[#5E6B75]">Updating outcome intelligence from PostgreSQL...</p>
-      </div>
-    );
-  }
-
-  if (error && !analytics) {
-    return (
-      <div className="min-h-screen bg-[#FAF9F5] text-[#16212B] flex flex-col items-center justify-center p-8 text-center">
-        <AlertTriangle className="w-12 h-12 text-red-600 mb-4" />
-        <h2 className="text-xl font-bold mb-2">KaushalSetu Database Telemetry Error</h2>
-        <p className="text-sm font-mono text-red-700 max-w-md mb-6">{error}</p>
-        <button
-          onClick={() => loadAnalytics()}
-          className="px-4 py-2 bg-[#18324A] text-white rounded font-mono text-sm flex items-center gap-2 hover:bg-[#0F253B] transition-colors cursor-pointer"
-        >
-          <RefreshCw className="w-4 h-4" />
-          <span>Retry Connection</span>
-        </button>
-      </div>
-    );
-  }
-
-  const funnel = analytics?.funnel;
-  const impactMatrix = analytics?.impactMatrix;
-
-  // Real database-driven 3-Tier Outcome Tracking Telemetry
-  const trainingEnrolled = impactMatrix?.trainingOutcome?.enrolled ?? funnel?.totalTrained ?? 0;
-  const trainingCompleted = impactMatrix?.trainingOutcome?.completed ?? funnel?.completed ?? 0;
-  const trainingCertified = impactMatrix?.trainingOutcome?.certified ?? funnel?.certified ?? 0;
-  const trainingCompletionRate = impactMatrix?.trainingOutcome?.completionRate ?? funnel?.completionRate ?? 0;
-  const trainingCertificationRate = impactMatrix?.trainingOutcome?.certificationRate ?? funnel?.certificationRate ?? 0;
-
-  const empEmployed = impactMatrix?.employmentOutcome?.employed ?? funnel?.currentlyEmployed ?? 0;
-  const empSelfEmployed = impactMatrix?.employmentOutcome?.selfEmployed ?? 0;
-  const empApprentices = impactMatrix?.employmentOutcome?.apprentices ?? 0;
-  const empUnemployed = impactMatrix?.employmentOutcome?.unemployed ?? 0;
-  const empTotalAssessed = impactMatrix?.employmentOutcome?.totalAssessed ?? trainingEnrolled;
-
-  const ret6mEligible = impactMatrix?.retentionOutcome?.sixMonths?.eligible ?? (empEmployed + empSelfEmployed + empApprentices);
-  const ret6mStillEmployed = impactMatrix?.retentionOutcome?.sixMonths?.stillEmployed ?? (funnel?.retained ?? empEmployed);
-  const ret6mLeftJob = impactMatrix?.retentionOutcome?.sixMonths?.leftJob ?? Math.max(0, ret6mEligible - ret6mStillEmployed);
-  const ret6mRate = impactMatrix?.retentionOutcome?.sixMonths?.retentionRate ?? (ret6mEligible > 0 ? Math.round((ret6mStillEmployed / ret6mEligible) * 100) : 0);
-
-  const ret12mEligible = impactMatrix?.retentionOutcome?.twelveMonths?.eligible ?? ret6mEligible;
-  const ret12mStillEmployed = impactMatrix?.retentionOutcome?.twelveMonths?.stillEmployed ?? Math.max(0, Math.round(ret6mStillEmployed * 0.86));
-  const ret12mChangedJobs = impactMatrix?.retentionOutcome?.twelveMonths?.changedJobs ?? Math.max(0, ret6mStillEmployed - ret12mStillEmployed);
-  const ret12mRate = impactMatrix?.retentionOutcome?.twelveMonths?.retentionRate ?? (ret12mEligible > 0 ? Math.round((ret12mStillEmployed / ret12mEligible) * 100) : 0);
-
   return (
-    <div className="min-h-screen bg-[#FAF9F5] text-[#16212B] flex flex-col selection:bg-[#18324A] selection:text-white">
-      {/* Top Banner Navigation */}
-      <div className="border-b border-[#DCE3E7] bg-[#FAF7EE] px-4 py-3 sm:px-8">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+    <div className="min-h-screen bg-[#FAF9F5] text-[#16212B] font-sans">
+      
+      {/* 1. Sovereign Telemetry Banner & Status Bar */}
+      <div className="bg-[#18324A] text-white border-b border-[#087F8C]/40">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 md:px-8 py-3.5 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <button 
-              onClick={onNavigateHome}
-              className="flex items-center gap-2 group text-left cursor-pointer"
-            >
-              <div className="w-8 h-8 rounded bg-[#18324A] text-white flex items-center justify-center font-serif font-bold text-sm tracking-wider">
-                क
+            <div className="w-8 h-8 rounded bg-[#087F8C]/20 border border-[#087F8C] flex items-center justify-center text-[#E7F5F4]">
+              <ShieldCheck className="w-4 h-4 text-[#087F8C]" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs uppercase tracking-wider text-[#E7F5F4] font-bold">
+                  Sovereign Outcome Telemetry Node
+                </span>
+                <span className="px-2 py-0.5 text-[10px] font-mono bg-[#087F8C]/40 text-[#E7F5F4] border border-[#087F8C] rounded">
+                  NCVET / MSDE Standard
+                </span>
               </div>
-              <div>
-                <div className="font-serif font-bold text-sm tracking-wide text-[#16212B] group-hover:text-[#18324A] transition-colors">
-                  KAUSHAL SETU <span className="text-xs font-normal text-[#5E6B75]">| कौशल सेतु</span>
-                </div>
-                <div className="text-[10px] font-mono tracking-wider text-[#5E6B75] uppercase">
-                  Longitudinal Skilling Outcome Observatory
-                </div>
-              </div>
-            </button>
-            <span className="hidden sm:inline-block h-4 w-px bg-[#DCE3E7]" />
-            <div className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono border transition-all ${
-              realtimePulse ? 'bg-amber-100 text-amber-900 border-amber-300 scale-105' : 'bg-[#D8EEDF] text-[#164627] border-[#B6DBC0]'
-            }`}>
-              <span className={`w-2 h-2 rounded-full ${realtimePulse ? 'bg-amber-500 animate-ping' : 'bg-[#087F8C]'}`} />
-              <span>LIVE SUPABASE REALTIME PULSE · Last synced: {lastRealtimeSync}</span>
+              <p className="text-[11px] text-[#DCE3E7]/80 font-mono">
+                PostgreSQL Cryptographic Ledger • Role: <strong className="text-white">GOVERNMENT</strong> • Strict Aggregate Mode
+              </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-4 text-xs font-mono">
+            <div className="flex items-center gap-2">
+              <span className={`w-2.5 h-2.5 rounded-full ${realtimePulse ? 'bg-emerald-400 ring-4 ring-emerald-400/40 animate-ping' : 'bg-emerald-500'}`} />
+              <span className="text-[#DCE3E7] text-[11px]">Realtime Active</span>
+            </div>
+            <div className="text-[11px] text-[#DCE3E7]/70 hidden sm:block">
+              Sync: <span className="text-white font-semibold">{lastSync}</span>
+            </div>
             <button
-              onClick={() => setIsDefinitionModalOpen(true)}
-              className="px-2.5 py-1.5 bg-[#EDE8D5] hover:bg-[#E2DDC7] text-[#18324A] rounded text-xs font-mono flex items-center gap-1.5 transition-colors cursor-pointer border border-[#DCE3E7]"
+              onClick={() => fetchIntelligence(false)}
+              disabled={loading}
+              className="p-1.5 hover:bg-[#087F8C]/20 text-[#DCE3E7] hover:text-white rounded border border-[#087F8C]/30 transition-colors cursor-pointer"
+              title="Manual Telemetry Re-query"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-[#087F8C]' : ''}`} />
+            </button>
+            <button
+              onClick={() => setIsMethodologyOpen(true)}
+              className="px-2.5 py-1 text-[11px] bg-[#087F8C] hover:bg-[#087F8C]/90 text-white rounded font-medium transition-colors cursor-pointer flex items-center gap-1.5"
             >
               <HelpCircle className="w-3.5 h-3.5" />
-              <span>Metric Definitions</span>
+              <span>Methodology & Definitions</span>
             </button>
             <button
-              onClick={() => onSwitchRole('trainee')}
-              className="px-2.5 py-1.5 bg-[#EDE8D5] hover:bg-[#E2DDC7] text-[#18324A] rounded text-xs font-mono transition-colors cursor-pointer"
+              onClick={handleExportTelemetry}
+              className="px-2.5 py-1 text-[11px] bg-white/10 hover:bg-white/20 text-[#DCE3E7] hover:text-white rounded font-medium transition-colors cursor-pointer flex items-center gap-1.5"
             >
-              Trainee View →
-            </button>
-            <button
-              onClick={() => onSwitchRole('employer')}
-              className="px-2.5 py-1.5 bg-[#18324A] hover:bg-[#0F253B] text-white rounded text-xs font-mono transition-colors cursor-pointer"
-            >
-              Employer Portal →
+              <Download className="w-3.5 h-3.5" />
+              <span>Export JSON</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Action Notification Alert */}
-      {actionNotice && (
-        <div className="bg-emerald-100 border-b border-emerald-300 px-4 py-2 text-center text-xs font-mono text-emerald-800 flex items-center justify-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-          <span>{actionNotice}</span>
+      {/* Action Notice Banner */}
+      {actionSuccessNotice && (
+        <div className="bg-[#E7F5F4] border-b border-[#087F8C] text-[#087F8C] px-6 py-2.5 text-xs font-mono font-bold flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-[#087F8C]" />
+            <span>{actionSuccessNotice}</span>
+          </div>
+          <button onClick={() => setActionSuccessNotice(null)} className="text-[#087F8C] hover:text-[#16212B]">
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6 sm:py-8 sm:px-8 space-y-6">
-        
-        {/* Header & High-Level Summary */}
-        <div className="bg-[#FAF7EE] border border-[#DCE3E7] rounded-lg p-5 sm:p-6 shadow-xs">
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
-            
-            <div className="md:col-span-6 space-y-1">
-              <span className="text-xs font-mono uppercase tracking-wider text-[#087F8C] block font-semibold">
-                Ministry of Skill Development and Entrepreneurship · National Grid
-              </span>
-              <h1 className="text-2xl sm:text-3xl font-serif font-bold text-[#16212B]">
-                Longitudinal Outcome Intelligence Funnel
-              </h1>
-              <p className="text-xs text-[#5E6B75]">
-                Real PostgreSQL Tracking: Training → Certification → Placement → Employment → Retention → Salary Progression
-              </p>
-            </div>
-
-            <div className="md:col-span-6 flex flex-wrap items-center justify-start md:justify-end gap-3 pt-2 md:pt-0">
-              <div className="p-3 bg-white border border-[#DCE3E7] rounded text-left min-w-[130px] shadow-2xs">
-                <div className="text-[10px] font-mono uppercase text-[#5E6B75]">Tracked Trainees</div>
-                <div className="text-2xl font-serif font-bold text-[#18324A]">
-                  {funnel?.totalTrained ?? 0}
-                </div>
-                <div className="text-[10px] text-[#087F8C] font-mono">Total Database Records</div>
-              </div>
-
-              <div className="p-3 bg-white border border-[#DCE3E7] rounded text-left min-w-[130px] shadow-2xs">
-                <div className="text-[10px] font-mono uppercase text-[#5E6B75]">Placement Rate</div>
-                <div className="text-2xl font-serif font-bold text-[#15803D]">
-                  {funnel?.placementRate !== undefined ? `${funnel.placementRate}%` : 'N/A'}
-                </div>
-                <div className="text-[10px] text-[#5E6B75] font-mono">
-                  {funnel?.placed ?? 0} Placed / {funnel?.completed ?? 0} Finished
-                </div>
-              </div>
-
-              <div className="p-3 bg-white border border-[#DCE3E7] rounded text-left min-w-[130px] shadow-2xs">
-                <div className="text-[10px] font-mono uppercase text-[#5E6B75]">Salary Progression</div>
-                <div className="text-2xl font-serif font-bold text-[#087F8C]">
-                  {funnel?.salaryProgression?.medianDeltaPercent !== undefined 
-                    ? `+${funnel.salaryProgression.medianDeltaPercent}%` 
-                    : 'N/A'}
-                </div>
-                <div className="text-[10px] text-[#15803D] font-mono">Observed Wage Lift</div>
-              </div>
-            </div>
-
+      {/* 2. Global Server-Side Filter Bar (Section 9 & 11) */}
+      <div className="bg-white border-b border-[#DCE3E7] sticky top-[76px] sm:top-[84px] z-40 shadow-xs">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 md:px-8 py-3 flex flex-wrap items-center justify-between gap-3">
+          
+          <div className="flex items-center gap-2 text-xs font-mono font-semibold text-[#5E6B75]">
+            <Filter className="w-3.5 h-3.5 text-[#087F8C]" />
+            <span>TELEMETRY FILTERS:</span>
           </div>
-        </div>
 
-        {/* Filter Toolbar */}
-        <div className="bg-[#FAF7EE] border border-[#DCE3E7] rounded-lg p-4 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white rounded border border-[#DCE3E7] text-xs font-mono text-[#18324A]">
-              <Filter className="w-3.5 h-3.5 text-[#5E6B75]" />
-              <span className="text-[#5E6B75]">District:</span>
+          <div className="flex flex-wrap items-center gap-3 text-xs">
+            {/* Time Filter (Requirement 9) */}
+            <div className="flex items-center gap-1">
+              <span className="text-[11px] font-mono text-[#5E6B75] hidden sm:inline">Time:</span>
+              <div className="inline-flex rounded border border-[#DCE3E7] p-0.5 bg-[#FAF9F5] font-mono text-[11px]">
+                {[
+                  { id: 'all', label: 'All Time' },
+                  { id: '30d', label: '30 Days' },
+                  { id: '90d', label: '90 Days' },
+                  { id: '6m', label: '6 Months' },
+                  { id: '12m', label: '12 Months' },
+                ].map(tf => (
+                  <button
+                    key={tf.id}
+                    onClick={() => setTimeRange(tf.id)}
+                    className={`px-2 py-1 rounded transition-colors cursor-pointer ${
+                      timeRange === tf.id ? 'bg-[#18324A] text-white font-bold' : 'text-[#5E6B75] hover:text-[#16212B]'
+                    }`}
+                  >
+                    {tf.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* District Filter (Requirement 11) */}
+            <div className="flex items-center gap-1">
+              <span className="text-[11px] font-mono text-[#5E6B75] hidden md:inline">District:</span>
               <select
                 value={selectedDistrict}
-                onChange={(e) => setSelectedDistrict(e.target.value)}
-                className="bg-transparent outline-none cursor-pointer font-medium"
+                onChange={e => setSelectedDistrict(e.target.value)}
+                className="text-xs font-mono bg-[#FAF9F5] border border-[#DCE3E7] rounded px-2.5 py-1 text-[#16212B] focus:border-[#087F8C] focus:outline-none"
               >
                 <option value="All">All Districts</option>
-                <option value="Pune">Pune Metro Region</option>
-                <option value="Sambhajinagar">Chhatrapati Sambhajinagar</option>
-                <option value="Nashik">Nashik Engineering Cluster</option>
-                <option value="Nagpur">Nagpur Logistics & Tech</option>
+                {districtOptions.map(d => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
               </select>
             </div>
 
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white rounded border border-[#DCE3E7] text-xs font-mono text-[#18324A]">
-              <span className="text-[#5E6B75]">Scheme:</span>
+            {/* Programme Filter */}
+            <div className="flex items-center gap-1">
+              <span className="text-[11px] font-mono text-[#5E6B75] hidden lg:inline">Programme:</span>
               <select
                 value={selectedProgramme}
-                onChange={(e) => setSelectedProgramme(e.target.value)}
-                className="bg-transparent outline-none cursor-pointer font-medium"
+                onChange={e => setSelectedProgramme(e.target.value)}
+                className="text-xs font-mono bg-[#FAF9F5] border border-[#DCE3E7] rounded px-2.5 py-1 text-[#16212B] focus:border-[#087F8C] focus:outline-none max-w-[180px] truncate"
               >
                 <option value="All">All Programmes</option>
-                <option value="PMKVY">PMKVY 4.0</option>
-                <option value="MSSDS">State Mission (MSSDS)</option>
-                <option value="DDU-GKY">DDU-GKY</option>
+                {programmeOptions.map(p => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
               </select>
             </div>
 
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white rounded border border-[#DCE3E7] text-xs font-mono text-[#18324A]">
-              <span className="text-[#5E6B75]">Provider:</span>
+            {/* Provider Filter */}
+            <div className="flex items-center gap-1">
+              <span className="text-[11px] font-mono text-[#5E6B75] hidden lg:inline">Provider:</span>
               <select
                 value={selectedProvider}
-                onChange={(e) => setSelectedProvider(e.target.value)}
-                className="bg-transparent outline-none cursor-pointer font-medium"
+                onChange={e => setSelectedProvider(e.target.value)}
+                className="text-xs font-mono bg-[#FAF9F5] border border-[#DCE3E7] rounded px-2.5 py-1 text-[#16212B] focus:border-[#087F8C] focus:outline-none max-w-[180px] truncate"
               >
                 <option value="All">All Providers</option>
-                <option value="Centurion Skill Academy">Centurion Skill Academy</option>
+                {providerOptions.map(pr => (
+                  <option key={pr} value={pr}>{pr}</option>
+                ))}
               </select>
             </div>
-          </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => loadAnalytics()}
-              className="px-3 py-1.5 bg-white hover:bg-[#EDE8D5] text-[#18324A] rounded text-xs font-mono flex items-center gap-1.5 border border-[#DCE3E7] transition-colors cursor-pointer"
-              title="Refresh Telemetry"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-              <span>Refresh</span>
-            </button>
-
-            <button
-              onClick={handleRecordProgrammeAction}
-              disabled={actionRecorded}
-              className="px-3 py-1.5 bg-[#15803D] hover:bg-[#116631] text-white rounded text-xs font-mono flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
-            >
-              <CheckSquare className="w-3.5 h-3.5" />
-              <span>{actionRecorded ? 'Programme Action Logged' : 'Record Programme Action'}</span>
-            </button>
-
-            <button
-              onClick={handleExportData}
-              className="px-3 py-1.5 bg-[#EDE8D5] hover:bg-[#E2DDC7] text-[#18324A] rounded text-xs font-mono flex items-center gap-1.5 transition-colors cursor-pointer border border-[#DCE3E7]"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Export Report</span>
-            </button>
+            {/* Clear Filters */}
+            {(selectedDistrict !== 'All' || selectedProgramme !== 'All' || selectedProvider !== 'All' || timeRange !== 'all') && (
+              <button
+                onClick={() => {
+                  setTimeRange('all');
+                  setSelectedDistrict('All');
+                  setSelectedProgramme('All');
+                  setSelectedProvider('All');
+                }}
+                className="text-[11px] font-mono text-[#E6A23C] hover:underline cursor-pointer"
+              >
+                Reset Filters
+              </button>
+            )}
           </div>
         </div>
+      </div>
 
-        {/* ==================================================================== */}
-        {/* SOVEREIGN OUTCOME TRACKING: 3-TIER IMPACT MODEL (REAL-TIME TELEMETRY) */}
-        {/* ==================================================================== */}
-        <div className="bg-[#FAF7EE] border-2 border-[#18324A] rounded-xl p-6 shadow-sm space-y-6">
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#DCE3E7] pb-4">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <span className="px-2 py-0.5 bg-[#18324A] text-white text-[10px] font-mono uppercase tracking-wider rounded font-bold">
-                  Sovereign Outcome Engine
-                </span>
-                <span className="flex items-center gap-1.5 px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-mono rounded">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Live Database Telemetry · Zero Demo Data
-                </span>
-              </div>
-              <h2 className="text-xl sm:text-2xl font-serif font-bold text-[#16212B]">
-                Outcome Tracking: Real Impact Data vs. Training Statistics
-              </h2>
-              <p className="text-xs text-[#5E6B75] font-sans max-w-3xl">
-                Determines multi-tier skilling outcomes across the full longitudinal lifecycle: from enrolled course participants, through workforce absorption, to 6-month and 12-month post-training employment sustainability.
-              </p>
-            </div>
-            <div className="text-right hidden sm:block">
-              <div className="text-xs font-mono text-[#5E6B75]">Audit Status</div>
-              <div className="text-xs font-mono font-bold text-[#15803D] flex items-center gap-1 justify-end">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Verified by PostgreSQL RPC</span>
-              </div>
-            </div>
+      {/* 3. Main Dashboard Body */}
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 md:px-8 py-6">
+
+        {/* Loading State */}
+        {loading && !intelligence && (
+          <div className="py-24 text-center">
+            <div className="w-12 h-12 border-4 border-[#18324A] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+            <p className="font-mono text-xs font-bold text-[#18324A] uppercase tracking-wider">
+              Executing Secure PostgreSQL Government Aggregation...
+            </p>
+            <p className="text-xs text-[#5E6B75] mt-1 font-mono">
+              Verifying caller role: GOVERNMENT • Querying get_government_outcome_intelligence()
+            </p>
           </div>
+        )}
 
-          {/* 3-Tier Outcome Tracking Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            
-            {/* TIER 1: TRAINING OUTCOME */}
-            <div className="bg-white border border-[#DCE3E7] rounded-lg p-5 flex flex-col justify-between space-y-4 shadow-2xs hover:border-[#18324A] transition-all">
-              <div>
-                <div className="flex items-center justify-between border-b border-[#FAF7EE] pb-2 mb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 rounded bg-sky-50 text-[#087F8C]">
-                      <BookOpen className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-mono uppercase font-bold text-[#5E6B75] tracking-wide block">Tier 01</span>
-                      <h3 className="text-sm font-serif font-bold text-[#16212B]">Training Outcome</h3>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-mono text-[#087F8C] bg-sky-50 border border-sky-100 px-2 py-0.5 rounded font-medium">
-                    Skilling Efficiency
-                  </span>
-                </div>
-
-                <div className="space-y-3 font-mono">
-                  <div className="flex items-center justify-between p-2.5 rounded bg-[#FAF9F5] border border-[#EBE8DC]">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-slate-400" />
-                      <span className="text-xs text-[#5E6B75]">Enrolled</span>
-                    </div>
-                    <span className="text-base font-bold text-[#16212B] font-serif">
-                      {trainingEnrolled.toLocaleString()}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between p-2.5 rounded bg-[#FAF9F5] border border-[#EBE8DC]">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-[#087F8C]" />
-                      <span className="text-xs text-[#5E6B75]">Completed</span>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-base font-bold text-[#087F8C] font-serif">
-                        {trainingCompleted.toLocaleString()}
-                      </span>
-                      <div className="text-[10px] text-emerald-600 font-mono">
-                        {trainingCompletionRate}% rate
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between p-2.5 rounded bg-[#FAF9F5] border border-[#EBE8DC]">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-amber-500" />
-                      <span className="text-xs text-[#5E6B75]">Certified</span>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-base font-bold text-[#18324A] font-serif">
-                        {trainingCertified.toLocaleString()}
-                      </span>
-                      <div className="text-[10px] text-amber-600 font-mono">
-                        {trainingCertificationRate}% rate
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Training Progression Meter */}
-              <div className="pt-3 border-t border-[#FAF7EE] space-y-1.5">
-                <div className="flex justify-between text-[10px] font-mono text-[#5E6B75]">
-                  <span>Cohort Completion</span>
-                  <span className="font-bold text-[#087F8C]">{trainingCompletionRate}%</span>
-                </div>
-                <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden flex">
-                  <div 
-                    className="bg-[#087F8C] h-full rounded-full transition-all duration-500"
-                    style={{ width: `${Math.min(100, trainingCompletionRate)}%` }}
-                  />
-                </div>
-              </div>
+        {/* Error State */}
+        {error && (
+          <div className="p-6 bg-red-50 border border-red-200 rounded-lg text-red-900 mb-6 font-mono text-xs">
+            <div className="flex items-center gap-2 font-bold mb-2">
+              <AlertTriangle className="w-4 h-4 text-red-700" />
+              <span>Sovereign Telemetry Query Error</span>
             </div>
-
-            {/* TIER 2: EMPLOYMENT OUTCOME */}
-            <div className="bg-white border border-[#DCE3E7] rounded-lg p-5 flex flex-col justify-between space-y-4 shadow-2xs hover:border-[#18324A] transition-all">
-              <div>
-                <div className="flex items-center justify-between border-b border-[#FAF7EE] pb-2 mb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 rounded bg-emerald-50 text-[#15803D]">
-                      <Briefcase className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-mono uppercase font-bold text-[#5E6B75] tracking-wide block">Tier 02</span>
-                      <h3 className="text-sm font-serif font-bold text-[#16212B]">Employment Outcome</h3>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-mono text-[#15803D] bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded font-medium">
-                    Workforce Absorption
-                  </span>
-                </div>
-
-                <div className="space-y-2 font-mono">
-                  <div className="flex items-center justify-between p-2 rounded bg-[#FAF9F5] border border-[#EBE8DC]">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-[#15803D]" />
-                      <span className="text-xs text-[#5E6B75]">Employed</span>
-                    </div>
-                    <span className="text-base font-bold text-[#15803D] font-serif">
-                      {empEmployed.toLocaleString()}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between p-2 rounded bg-[#FAF9F5] border border-[#EBE8DC]">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-[#087F8C]" />
-                      <span className="text-xs text-[#5E6B75]">Self-employed</span>
-                    </div>
-                    <span className="text-base font-bold text-[#087F8C] font-serif">
-                      {empSelfEmployed.toLocaleString()}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between p-2 rounded bg-[#FAF9F5] border border-[#EBE8DC]">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-amber-500" />
-                      <span className="text-xs text-[#5E6B75]">Apprentices</span>
-                    </div>
-                    <span className="text-base font-bold text-amber-700 font-serif">
-                      {empApprentices.toLocaleString()}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between p-2 rounded bg-[#FAF9F5] border border-[#EBE8DC]">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-slate-400" />
-                      <span className="text-xs text-[#5E6B75]">Unemployed</span>
-                    </div>
-                    <span className="text-base font-bold text-[#5E6B75] font-serif">
-                      {empUnemployed.toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Segmented Workforce Absorption Bar */}
-              <div className="pt-3 border-t border-[#FAF7EE] space-y-1.5">
-                <div className="flex justify-between text-[10px] font-mono text-[#5E6B75]">
-                  <span>Absorption Breakdown</span>
-                  <span>{empTotalAssessed} Assessed</span>
-                </div>
-                <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden flex">
-                  <div 
-                    className="bg-[#15803D] h-full"
-                    style={{ width: `${empTotalAssessed > 0 ? (empEmployed / empTotalAssessed) * 100 : 0}%` }}
-                    title={`Employed: ${empEmployed}`}
-                  />
-                  <div 
-                    className="bg-[#087F8C] h-full"
-                    style={{ width: `${empTotalAssessed > 0 ? (empSelfEmployed / empTotalAssessed) * 100 : 0}%` }}
-                    title={`Self-employed: ${empSelfEmployed}`}
-                  />
-                  <div 
-                    className="bg-amber-500 h-full"
-                    style={{ width: `${empTotalAssessed > 0 ? (empApprentices / empTotalAssessed) * 100 : 0}%` }}
-                    title={`Apprentices: ${empApprentices}`}
-                  />
-                  <div 
-                    className="bg-slate-300 h-full"
-                    style={{ width: `${empTotalAssessed > 0 ? (empUnemployed / empTotalAssessed) * 100 : 0}%` }}
-                    title={`Unemployed: ${empUnemployed}`}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* TIER 3: RETENTION (6 MONTHS & 12 MONTHS) */}
-            <div className="bg-white border border-[#DCE3E7] rounded-lg p-5 flex flex-col justify-between space-y-4 shadow-2xs hover:border-[#18324A] transition-all">
-              <div>
-                <div className="flex items-center justify-between border-b border-[#FAF7EE] pb-2 mb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 rounded bg-indigo-50 text-[#18324A]">
-                      <Clock className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-mono uppercase font-bold text-[#5E6B75] tracking-wide block">Tier 03</span>
-                      <h3 className="text-sm font-serif font-bold text-[#16212B]">Retention</h3>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-mono text-[#18324A] bg-slate-100 border border-slate-200 px-2 py-0.5 rounded font-medium">
-                    Longitudinal Audit
-                  </span>
-                </div>
-
-                <div className="space-y-3 font-mono">
-                  {/* 6 Months Milestone */}
-                  <div className="p-2.5 rounded bg-[#FAF9F5] border border-[#EBE8DC] space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-[#18324A] uppercase tracking-wider">
-                        After 6 months:
-                      </span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold">
-                        {ret6mRate}% Retained
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-slate-200">
-                      <div>
-                        <div className="text-[10px] text-[#5E6B75]">Still employed</div>
-                        <div className="text-sm font-bold text-[#15803D] font-serif">
-                          {ret6mStillEmployed.toLocaleString()}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] text-[#5E6B75]">Left job</div>
-                        <div className="text-sm font-bold text-rose-600 font-serif">
-                          {ret6mLeftJob.toLocaleString()}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 12 Months Milestone */}
-                  <div className="p-2.5 rounded bg-[#FAF9F5] border border-[#EBE8DC] space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-[#18324A] uppercase tracking-wider">
-                        After 12 months:
-                      </span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-800 font-bold">
-                        {ret12mRate}% Sustainable
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-slate-200">
-                      <div>
-                        <div className="text-[10px] text-[#5E6B75]">Still employed</div>
-                        <div className="text-sm font-bold text-[#087F8C] font-serif">
-                          {ret12mStillEmployed.toLocaleString()}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] text-[#5E6B75]">Changed jobs</div>
-                        <div className="text-sm font-bold text-amber-700 font-serif">
-                          {ret12mChangedJobs.toLocaleString()}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Longitudinal Audit Assurance Note */}
-              <div className="pt-3 border-t border-[#FAF7EE] text-[10px] font-mono text-[#5E6B75] flex items-center gap-1.5">
-                <ShieldCheck className="w-3.5 h-3.5 text-[#15803D] shrink-0" />
-                <span>Real impact data rather than superficial training counts</span>
-              </div>
-            </div>
-
+            <p className="mb-4">{error}</p>
+            <button
+              onClick={() => fetchIntelligence(false)}
+              className="px-3 py-1.5 bg-red-800 text-white rounded text-xs font-bold hover:bg-red-900 cursor-pointer"
+            >
+              Retry Connection
+            </button>
           </div>
-        </div>
+        )}
 
-        {/* ==================================================================== */}
-        {/* PRIMARY VISUALIZATION: THE 7-STAGE LONGITUDINAL OUTCOME FUNNEL       */}
-        {/* ==================================================================== */}
-        <div className="bg-[#FAF7EE] border border-[#DCE3E7] rounded-lg p-6 shadow-xs space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#DCE3E7] pb-3">
-            <div>
-              <span className="text-xs font-mono uppercase tracking-wider text-[#087F8C] block font-semibold">
-                Core Policy Telemetry
-              </span>
-              <h2 className="text-lg sm:text-xl font-serif font-bold text-[#16212B]">
-                Primary Visual: 7-Stage Longitudinal Outcome Funnel
-              </h2>
-            </div>
-            <div className="text-xs font-mono text-[#5E6B75]">
-              Derived dynamically from <span className="font-semibold text-[#18324A]">public.trainees</span>, <span className="font-semibold text-[#18324A]">certifications</span>, <span className="font-semibold text-[#18324A]">employment_records</span>, & <span className="font-semibold text-[#18324A]">follow_ups</span>
-            </div>
-          </div>
+        {/* Ready State */}
+        {intelligence && !error && (
+          <>
+            {/* VIEW 1: OVERVIEW */}
+            {activeTab === 'overview' && (
+              <div className="space-y-6">
+                
+                {/* Header Information Card */}
+                <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                      <h1 className="text-xl font-bold text-[#18324A]">
+                        National Skill Outcome Intelligence Dashboard
+                      </h1>
+                      <p className="text-xs text-[#5E6B75] mt-1">
+                        Sovereign post-training telemetry across accredited vocational institutions. Derived from verified employment records and longitudinal assessments.
+                      </p>
+                    </div>
+                    <div className="text-right font-mono text-xs text-[#5E6B75]">
+                      <div>Period: <strong className="text-[#18324A]">{timeRange.toUpperCase()}</strong></div>
+                      <div>Active District Filter: <strong className="text-[#18324A]">{selectedDistrict}</strong></div>
+                    </div>
+                  </div>
+                </div>
 
-          {/* 7-Stage Pipeline Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3">
-            
-            {/* Stage 1: TRAINED */}
-            <div className="bg-white border border-[#DCE3E7] rounded-lg p-3.5 flex flex-col justify-between space-y-2 relative shadow-2xs hover:border-[#18324A] transition-colors">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono uppercase font-bold text-[#5E6B75]">01 · Trained</span>
-                <Users className="w-3.5 h-3.5 text-[#18324A]" />
-              </div>
-              <div>
-                <div className="text-2xl font-serif font-bold text-[#18324A]">
-                  {funnel?.totalTrained ?? 0}
-                </div>
-                <div className="text-[10px] text-[#5E6B75] font-mono mt-0.5">
-                  Total Eligible Cohort
-                </div>
-              </div>
-              <div className="pt-2 border-t border-[#FAF7EE] text-[10px] font-mono text-[#087F8C]">
-                100% Base Funnel
-              </div>
-            </div>
+                {/* Primary KPI Funnel Cards (Section 5) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+                  
+                  {/* KPI 1: TOTAL TRAINEES */}
+                  <div className="bg-white border border-[#DCE3E7] rounded-lg p-4 flex flex-col justify-between">
+                    <div>
+                      <div className="text-[11px] font-mono font-bold text-[#5E6B75] uppercase tracking-wider flex items-center justify-between">
+                        <span>Total Trainees</span>
+                        <Users className="w-3.5 h-3.5 text-[#087F8C]" />
+                      </div>
+                      <div className="text-2xl font-bold font-mono text-[#18324A] mt-2">
+                        {intelligence.kpis.totalTrainees.toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="mt-3 pt-2 border-t border-[#DCE3E7]/60 text-[10px] text-[#5E6B75] font-mono leading-tight">
+                      Total cohort enrollments eligible in selected scope
+                    </div>
+                  </div>
 
-            {/* Stage 2: COMPLETED */}
-            <div className="bg-white border border-[#DCE3E7] rounded-lg p-3.5 flex flex-col justify-between space-y-2 relative shadow-2xs hover:border-[#18324A] transition-colors">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono uppercase font-bold text-[#5E6B75]">02 · Completed</span>
-                <BookOpen className="w-3.5 h-3.5 text-[#087F8C]" />
-              </div>
-              <div>
-                <div className="text-2xl font-serif font-bold text-[#087F8C]">
-                  {funnel?.completed ?? 0}
-                </div>
-                <div className="text-[10px] text-[#5E6B75] font-mono mt-0.5">
-                  Completion Rate: {funnel?.completionRate ?? 0}%
-                </div>
-              </div>
-              <div className="pt-2 border-t border-[#FAF7EE] text-[10px] font-mono text-[#15803D]">
-                {funnel?.completed && funnel?.totalTrained 
-                  ? `${Math.round((funnel.completed / funnel.totalTrained) * 100)}% of Cohort` 
-                  : 'N/A'}
-              </div>
-            </div>
+                  {/* KPI 2: TRAINING COMPLETED */}
+                  <div className="bg-white border border-[#DCE3E7] rounded-lg p-4 flex flex-col justify-between">
+                    <div>
+                      <div className="text-[11px] font-mono font-bold text-[#5E6B75] uppercase tracking-wider flex items-center justify-between">
+                        <span>Completed</span>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-[#087F8C]" />
+                      </div>
+                      <div className="text-2xl font-bold font-mono text-[#18324A] mt-2">
+                        {intelligence.kpis.trainingCompleted.toLocaleString()}
+                      </div>
+                      <div className="text-xs font-mono text-[#087F8C] font-semibold mt-0.5">
+                        {intelligence.kpis.completionRate !== null ? `${intelligence.kpis.completionRate}% rate` : 'Rate pending'}
+                      </div>
+                    </div>
+                    <div className="mt-3 pt-2 border-t border-[#DCE3E7]/60 text-[10px] text-[#5E6B75] font-mono leading-tight">
+                      Completed training records / eligible enrollments
+                    </div>
+                  </div>
 
-            {/* Stage 3: CERTIFIED */}
-            <div className="bg-white border border-[#DCE3E7] rounded-lg p-3.5 flex flex-col justify-between space-y-2 relative shadow-2xs hover:border-[#18324A] transition-colors">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono uppercase font-bold text-[#5E6B75]">03 · Certified</span>
-                <Award className="w-3.5 h-3.5 text-[#E6A23C]" />
-              </div>
-              <div>
-                <div className="text-2xl font-serif font-bold text-[#18324A]">
-                  {funnel?.certified ?? 0}
-                </div>
-                <div className="text-[10px] text-[#5E6B75] font-mono mt-0.5">
-                  Cert Rate: {funnel?.certificationRate ?? 0}%
-                </div>
-              </div>
-              <div className="pt-2 border-t border-[#FAF7EE] text-[10px] font-mono text-[#E6A23C]">
-                NCVET Verified
-              </div>
-            </div>
+                  {/* KPI 3: CERTIFIED */}
+                  <div className="bg-white border border-[#DCE3E7] rounded-lg p-4 flex flex-col justify-between">
+                    <div>
+                      <div className="text-[11px] font-mono font-bold text-[#5E6B75] uppercase tracking-wider flex items-center justify-between">
+                        <span>Certified</span>
+                        <Award className="w-3.5 h-3.5 text-[#087F8C]" />
+                      </div>
+                      <div className="text-2xl font-bold font-mono text-[#18324A] mt-2">
+                        {intelligence.kpis.certified.toLocaleString()}
+                      </div>
+                      <div className="text-xs font-mono text-[#087F8C] font-semibold mt-0.5">
+                        {intelligence.kpis.certificationRate !== null ? `${intelligence.kpis.certificationRate}% of completed` : 'Rate pending'}
+                      </div>
+                    </div>
+                    <div className="mt-3 pt-2 border-t border-[#DCE3E7]/60 text-[10px] text-[#5E6B75] font-mono leading-tight">
+                      Verified assessment certifications issued
+                    </div>
+                  </div>
 
-            {/* Stage 4: PLACED */}
-            <div className="bg-white border border-[#DCE3E7] rounded-lg p-3.5 flex flex-col justify-between space-y-2 relative shadow-2xs hover:border-[#18324A] transition-colors">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono uppercase font-bold text-[#5E6B75]">04 · Placed</span>
-                <Briefcase className="w-3.5 h-3.5 text-[#15803D]" />
-              </div>
-              <div>
-                <div className="text-2xl font-serif font-bold text-[#15803D]">
-                  {funnel?.placed ?? 0}
-                </div>
-                <div className="text-[10px] text-[#5E6B75] font-mono mt-0.5">
-                  Placement Rate: {funnel?.placementRate ?? 0}%
-                </div>
-              </div>
-              <div className="pt-2 border-t border-[#FAF7EE] text-[10px] font-mono text-[#164627]">
-                Validated: {funnel?.placedVerified ?? 0}
-              </div>
-            </div>
+                  {/* KPI 4: EMPLOYMENT OUTCOME RECORDED */}
+                  <div className="bg-white border border-[#DCE3E7] rounded-lg p-4 flex flex-col justify-between">
+                    <div>
+                      <div className="text-[11px] font-mono font-bold text-[#5E6B75] uppercase tracking-wider flex items-center justify-between">
+                        <span>Outcome Recorded</span>
+                        <Briefcase className="w-3.5 h-3.5 text-[#087F8C]" />
+                      </div>
+                      <div className="text-2xl font-bold font-mono text-[#18324A] mt-2">
+                        {intelligence.kpis.employed.toLocaleString()}
+                      </div>
+                      <div className="text-xs font-mono text-[#087F8C] font-semibold mt-0.5">
+                        {intelligence.kpis.employmentRate !== null ? `${intelligence.kpis.employmentRate}% recorded` : 'Rate pending'}
+                      </div>
+                    </div>
+                    <div className="mt-3 pt-2 border-t border-[#DCE3E7]/60 text-[10px] text-[#5E6B75] font-mono leading-tight">
+                      Outcome recorded after training (wage/self/apprentice)
+                    </div>
+                  </div>
 
-            {/* Stage 5: CURRENTLY EMPLOYED */}
-            <div className="bg-white border border-[#DCE3E7] rounded-lg p-3.5 flex flex-col justify-between space-y-2 relative shadow-2xs hover:border-[#18324A] transition-colors">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono uppercase font-bold text-[#5E6B75]">05 · Employed</span>
-                <ShieldCheck className="w-3.5 h-3.5 text-[#087F8C]" />
-              </div>
-              <div>
-                <div className="text-2xl font-serif font-bold text-[#087F8C]">
-                  {funnel?.currentlyEmployed ?? 0}
-                </div>
-                <div className="text-[10px] text-[#5E6B75] font-mono mt-0.5">
-                  Active in Workforce
-                </div>
-              </div>
-              <div className="pt-2 border-t border-[#FAF7EE] text-[10px] font-mono text-[#5E6B75]">
-                Latest Follow-up
-              </div>
-            </div>
+                  {/* KPI 5: RETENTION (Handles Insufficient Data) */}
+                  <div className="bg-white border border-[#DCE3E7] rounded-lg p-4 flex flex-col justify-between">
+                    <div>
+                      <div className="text-[11px] font-mono font-bold text-[#5E6B75] uppercase tracking-wider flex items-center justify-between">
+                        <span>Retention (6M)</span>
+                        <Clock className="w-3.5 h-3.5 text-[#087F8C]" />
+                      </div>
+                      {intelligence.kpis.retention6m.hasSufficientData ? (
+                        <>
+                          <div className="text-2xl font-bold font-mono text-[#18324A] mt-2">
+                            {intelligence.kpis.retention6m.rate}%
+                          </div>
+                          <div className="text-xs font-mono text-[#087F8C] font-semibold mt-0.5">
+                            {intelligence.kpis.retention6m.retainedCount} / {intelligence.kpis.retention6m.eligibleCount} verified
+                          </div>
+                        </>
+                      ) : (
+                        <div className="mt-2 py-1 px-2 bg-amber-50 border border-amber-200 rounded text-[11px] font-mono font-semibold text-amber-800">
+                          {intelligence.kpis.retention6m.label}
+                        </div>
+                      )}
+                    </div>
+                    <div className="mt-3 pt-2 border-t border-[#DCE3E7]/60 text-[10px] text-[#5E6B75] font-mono leading-tight">
+                      Observed retention for placements elapsed &ge; 180 days
+                    </div>
+                  </div>
 
-            {/* Stage 6: RETAINED */}
-            <div className="bg-white border border-[#DCE3E7] rounded-lg p-3.5 flex flex-col justify-between space-y-2 relative shadow-2xs hover:border-[#18324A] transition-colors">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono uppercase font-bold text-[#5E6B75]">06 · Retained</span>
-                <Activity className="w-3.5 h-3.5 text-[#15803D]" />
+                  {/* KPI 6: SALARY PROGRESSION (Handles Insufficient Data) */}
+                  <div className="bg-white border border-[#DCE3E7] rounded-lg p-4 flex flex-col justify-between">
+                    <div>
+                      <div className="text-[11px] font-mono font-bold text-[#5E6B75] uppercase tracking-wider flex items-center justify-between">
+                        <span>Salary Lift</span>
+                        <TrendingUp className="w-3.5 h-3.5 text-[#087F8C]" />
+                      </div>
+                      {intelligence.kpis.salaryProgression.hasSufficientData ? (
+                        <>
+                          <div className="text-2xl font-bold font-mono text-emerald-700 mt-2">
+                            +{intelligence.kpis.salaryProgression.averagePercentChange}%
+                          </div>
+                          <div className="text-xs font-mono text-[#5E6B75] font-semibold mt-0.5">
+                            +₹{intelligence.kpis.salaryProgression.averageAbsoluteChange.toLocaleString()} / mo
+                          </div>
+                        </>
+                      ) : (
+                        <div className="mt-2 py-1 px-2 bg-amber-50 border border-amber-200 rounded text-[11px] font-mono font-semibold text-amber-800">
+                          {intelligence.kpis.salaryProgression.label}
+                        </div>
+                      )}
+                    </div>
+                    <div className="mt-3 pt-2 border-t border-[#DCE3E7]/60 text-[10px] text-[#5E6B75] font-mono leading-tight">
+                      Observed salary change recorded between historical records
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Section 6: Outcome Funnel Visualization */}
+                <div className="bg-white border border-[#DCE3E7] rounded-lg p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h2 className="text-base font-bold text-[#18324A]">
+                        Ecosystem Outcome Funnel
+                      </h2>
+                      <p className="text-xs text-[#5E6B75]">
+                        Progression of cohorts through accredited lifecycle stages. No estimated or fabricated stages.
+                      </p>
+                    </div>
+                    <div className="text-[11px] font-mono text-[#5E6B75]">
+                      Database Records: <strong className="text-[#18324A]">{intelligence.meta.dataSource}</strong>
+                    </div>
+                  </div>
+
+                  {/* Funnel Visual Sequence */}
+                  <div className="grid grid-cols-1 md:grid-cols-5 gap-3 pt-2">
+                    
+                    {/* Stage 1: Enrolled */}
+                    <div className="p-4 bg-[#FAF9F5] border border-[#DCE3E7] rounded flex flex-col justify-between">
+                      <div className="text-xs font-mono text-[#5E6B75] uppercase font-bold">1. Enrolled</div>
+                      <div className="text-2xl font-mono font-bold text-[#18324A] my-2">
+                        {intelligence.funnel.trained.toLocaleString()}
+                      </div>
+                      <div className="text-[10px] text-[#5E6B75] font-mono">100% baseline</div>
+                    </div>
+
+                    {/* Stage 2: Completed */}
+                    <div className="p-4 bg-[#FAF9F5] border border-[#DCE3E7] rounded flex flex-col justify-between">
+                      <div className="text-xs font-mono text-[#5E6B75] uppercase font-bold">2. Completed</div>
+                      <div className="text-2xl font-mono font-bold text-[#18324A] my-2">
+                        {intelligence.funnel.completed.toLocaleString()}
+                      </div>
+                      <div className="text-[10px] text-[#087F8C] font-mono font-semibold">
+                        {intelligence.kpis.completionRate !== null ? `${intelligence.kpis.completionRate}% of enrolled` : 'Data pending'}
+                      </div>
+                    </div>
+
+                    {/* Stage 3: Certified */}
+                    <div className="p-4 bg-[#FAF9F5] border border-[#DCE3E7] rounded flex flex-col justify-between">
+                      <div className="text-xs font-mono text-[#5E6B75] uppercase font-bold">3. Certified</div>
+                      <div className="text-2xl font-mono font-bold text-[#18324A] my-2">
+                        {intelligence.funnel.certified.toLocaleString()}
+                      </div>
+                      <div className="text-[10px] text-[#087F8C] font-mono font-semibold">
+                        {intelligence.kpis.certificationRate !== null ? `${intelligence.kpis.certificationRate}% of completed` : 'Data pending'}
+                      </div>
+                    </div>
+
+                    {/* Stage 4: Employment Recorded */}
+                    <div className="p-4 bg-[#FAF9F5] border border-[#DCE3E7] rounded flex flex-col justify-between">
+                      <div className="text-xs font-mono text-[#5E6B75] uppercase font-bold">4. Outcome Recorded</div>
+                      <div className="text-2xl font-mono font-bold text-[#18324A] my-2">
+                        {intelligence.funnel.employed.toLocaleString()}
+                      </div>
+                      <div className="text-[10px] text-[#087F8C] font-mono font-semibold">
+                        {intelligence.kpis.employmentRate !== null ? `${intelligence.kpis.employmentRate}% of eligible` : 'Data pending'}
+                      </div>
+                    </div>
+
+                    {/* Stage 5: Retained (6M) */}
+                    <div className="p-4 bg-[#FAF9F5] border border-[#DCE3E7] rounded flex flex-col justify-between">
+                      <div className="text-xs font-mono text-[#5E6B75] uppercase font-bold">5. Retained (6M)</div>
+                      {intelligence.funnel.hasRetentionData ? (
+                        <>
+                          <div className="text-2xl font-mono font-bold text-[#18324A] my-2">
+                            {intelligence.funnel.retained?.toLocaleString()}
+                          </div>
+                          <div className="text-[10px] text-[#087F8C] font-mono font-semibold">
+                            {intelligence.kpis.retention6m.rate}% observed
+                          </div>
+                        </>
+                      ) : (
+                        <div className="my-2 py-1 px-2 bg-amber-50 border border-amber-200 rounded text-[11px] font-mono text-amber-800">
+                          Insufficient observation data
+                        </div>
+                      )}
+                      <div className="text-[10px] text-[#5E6B75] font-mono">&ge; 180 days elapsed</div>
+                    </div>
+
+                  </div>
+                </div>
+
+                {/* Section 22: Areas Requiring Review (Closed-Loop Callout) */}
+                <div className="bg-white border border-[#DCE3E7] rounded-lg p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="w-5 h-5 text-[#E6A23C]" />
+                      <div>
+                        <h2 className="text-base font-bold text-[#18324A]">
+                          Areas Requiring Review (Data-Driven Signals)
+                        </h2>
+                        <p className="text-xs text-[#5E6B75]">
+                          Evidence-based policy signals. Does not make automated decisions or assign causal blame.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => onTabChange?.('interventions')}
+                      className="text-xs font-mono text-[#087F8C] font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>View All Interventions ({intelligence.interventions.length})</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Signal 1: Skill Gaps */}
+                    <div className="p-4 bg-[#FAF9F5] border border-[#DCE3E7] rounded">
+                      <div className="flex items-center justify-between text-xs font-mono text-[#5E6B75] mb-2">
+                        <span className="font-bold">Competency Signal</span>
+                        <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded text-[10px] font-bold">Review</span>
+                      </div>
+                      <div className="text-lg font-bold text-[#18324A]">
+                        {intelligence.skillGaps.length} Critical Deficits Observed
+                      </div>
+                      <p className="text-xs text-[#5E6B75] mt-1 leading-relaxed">
+                        Top observed gap: <strong className="text-[#18324A]">{intelligence.skillGaps[0]?.skillName || 'None'}</strong> with {intelligence.skillGaps[0]?.gap || 0} pt delta from benchmark.
+                      </p>
+                      <button
+                        onClick={() => onTabChange?.('skills')}
+                        className="mt-3 text-xs font-mono text-[#087F8C] font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        Investigate Skill Gaps <ArrowUpRight className="w-3 h-3" />
+                      </button>
+                    </div>
+
+                    {/* Signal 2: Non-Placement */}
+                    <div className="p-4 bg-[#FAF9F5] border border-[#DCE3E7] rounded">
+                      <div className="flex items-center justify-between text-xs font-mono text-[#5E6B75] mb-2">
+                        <span className="font-bold">Non-Placement Signal</span>
+                        <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded text-[10px] font-bold">Review</span>
+                      </div>
+                      <div className="text-lg font-bold text-[#18324A]">
+                        {intelligence.kpis.notEmployed} Trainees Seeking Role
+                      </div>
+                      <p className="text-xs text-[#5E6B75] mt-1 leading-relaxed">
+                        Primary reported reason: <strong className="text-[#18324A]">{intelligence.nonPlacement.reasons[0]?.reason || 'Still seeking employment'}</strong> ({intelligence.nonPlacement.reasons[0]?.percentage || 0}%).
+                      </p>
+                      <button
+                        onClick={() => onTabChange?.('non-placement')}
+                        className="mt-3 text-xs font-mono text-[#087F8C] font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        Investigate Non-Placement <ArrowUpRight className="w-3 h-3" />
+                      </button>
+                    </div>
+
+                    {/* Signal 3: Longitudinal Coverage */}
+                    <div className="p-4 bg-[#FAF9F5] border border-[#DCE3E7] rounded">
+                      <div className="flex items-center justify-between text-xs font-mono text-[#5E6B75] mb-2">
+                        <span className="font-bold">Follow-Up Coverage</span>
+                        <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded text-[10px] font-bold">Signal</span>
+                      </div>
+                      <div className="text-lg font-bold text-[#18324A]">
+                        {intelligence.kpis.followUps.completed} / {intelligence.kpis.followUps.assigned} Follow-ups
+                      </div>
+                      <p className="text-xs text-[#5E6B75] mt-1 leading-relaxed">
+                        Coverage rate: <strong className="text-[#18324A]">{intelligence.kpis.followUps.completionRate || 0}%</strong>. Overdue items requiring provider engagement: <strong className="text-[#18324A]">{intelligence.kpis.followUps.overdue}</strong>.
+                      </p>
+                      <button
+                        onClick={() => onTabChange?.('follow-ups')}
+                        className="mt-3 text-xs font-mono text-[#087F8C] font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        Investigate Follow-ups <ArrowUpRight className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
               </div>
-              <div>
-                <div className="text-2xl font-serif font-bold text-[#15803D]">
-                  {funnel?.retentionEligible && funnel.retentionEligible > 0 ? (
-                    `${funnel?.retentionRate ?? 0}%`
+            )}
+
+            {/* VIEW 2: ANALYTICS & TRENDS */}
+            {activeTab === 'analytics' && (
+              <div className="space-y-6">
+                <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+                  <h2 className="text-lg font-bold text-[#18324A]">Outcome Trends (Quarterly Time-Series)</h2>
+                  <p className="text-xs text-[#5E6B75] mt-1">
+                    Temporal distribution derived directly from cohort enrollment and employment verification timestamps.
+                  </p>
+                </div>
+
+                {/* Trend Table */}
+                <div className="bg-white border border-[#DCE3E7] rounded-lg overflow-hidden">
+                  <div className="p-4 border-b border-[#DCE3E7] flex items-center justify-between">
+                    <span className="font-mono text-xs font-bold text-[#18324A] uppercase">
+                      Quarterly Cohort Progression Observations
+                    </span>
+                    <span className="text-[11px] font-mono text-[#5E6B75]">
+                      {intelligence.outcomeTrends.length} Quarter Intervals
+                    </span>
+                  </div>
+
+                  {intelligence.outcomeTrends.length === 0 ? (
+                    <div className="p-8 text-center text-[#5E6B75] font-mono text-xs">
+                      No cohort observations recorded for the selected filter parameters.
+                    </div>
                   ) : (
-                    <span className="text-sm font-sans font-semibold text-[#5E6B75]">
-                      {funnel?.retained ? `${funnel.retained} Retained` : 'Insufficient follow-up data'}
-                    </span>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs font-mono">
+                        <thead className="bg-[#FAF9F5] border-b border-[#DCE3E7] text-[#5E6B75]">
+                          <tr>
+                            <th className="py-2.5 px-4 font-semibold">Quarter</th>
+                            <th className="py-2.5 px-4 font-semibold text-right">Enrolled</th>
+                            <th className="py-2.5 px-4 font-semibold text-right">Completed</th>
+                            <th className="py-2.5 px-4 font-semibold text-right">Certified</th>
+                            <th className="py-2.5 px-4 font-semibold text-right">Employed</th>
+                            <th className="py-2.5 px-4 font-semibold text-right">Not Employed</th>
+                            <th className="py-2.5 px-4 font-semibold text-right">Placement Rate</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#DCE3E7]">
+                          {intelligence.outcomeTrends.map((tr, idx) => {
+                            const pRate = tr.completed > 0 ? ((tr.employed / tr.completed) * 100).toFixed(1) : 'N/A';
+                            return (
+                              <tr key={idx} className="hover:bg-[#FAF9F5]/80 transition-colors">
+                                <td className="py-3 px-4 font-bold text-[#18324A]">{tr.period}</td>
+                                <td className="py-3 px-4 text-right">{tr.enrolled}</td>
+                                <td className="py-3 px-4 text-right">{tr.completed}</td>
+                                <td className="py-3 px-4 text-right text-[#087F8C] font-semibold">{tr.certified}</td>
+                                <td className="py-3 px-4 text-right text-emerald-700 font-bold">{tr.employed}</td>
+                                <td className="py-3 px-4 text-right text-[#E6A23C]">{tr.notEmployed}</td>
+                                <td className="py-3 px-4 text-right font-bold text-[#18324A]">
+                                  {pRate !== 'N/A' ? `${pRate}%` : 'Pending'}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
                 </div>
-                <div className="text-[10px] text-[#5E6B75] font-mono mt-0.5">
-                  {funnel?.retentionEligible && funnel.retentionEligible > 0 
-                    ? `${funnel.retained} of ${funnel.retentionEligible} eligible` 
-                    : 'Longitudinal follow-ups'}
-                </div>
-              </div>
-              <div className="pt-2 border-t border-[#FAF7EE] text-[10px] font-mono text-[#15803D]">
-                Consensus Audited
-              </div>
-            </div>
 
-            {/* Stage 7: SALARY PROGRESSION */}
-            <div className="bg-white border border-[#DCE3E7] rounded-lg p-3.5 flex flex-col justify-between space-y-2 relative shadow-2xs hover:border-[#18324A] transition-colors">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono uppercase font-bold text-[#5E6B75]">07 · Wage Lift</span>
-                <TrendingUp className="w-3.5 h-3.5 text-[#087F8C]" />
-              </div>
-              <div>
-                <div className="text-2xl font-serif font-bold text-[#087F8C]">
-                  {funnel?.salaryProgression?.medianDeltaPercent !== undefined 
-                    ? `+${funnel.salaryProgression.medianDeltaPercent}%` 
-                    : 'N/A'}
-                </div>
-                <div className="text-[10px] text-[#5E6B75] font-mono mt-0.5">
-                  {funnel?.salaryProgression?.medianBaseline 
-                    ? `₹${funnel.salaryProgression.medianBaseline.toLocaleString()} → ₹${funnel.salaryProgression.medianCurrent.toLocaleString()}` 
-                    : 'Salary records'}
-                </div>
-              </div>
-              <div className="pt-2 border-t border-[#FAF7EE] text-[10px] font-mono text-[#15803D]">
-                {funnel?.salaryProgression?.percentWithIncrease ?? 100}% with wage lift
-              </div>
-            </div>
-
-          </div>
-
-          {/* Visual Step Connection Bar */}
-          <div className="hidden lg:flex items-center justify-between px-6 pt-1 text-[11px] font-mono text-[#5E6B75]">
-            <span className="flex items-center gap-1">Trained <ArrowRight className="w-3 h-3 text-[#5E6B75]" /></span>
-            <span className="flex items-center gap-1">Completed ({funnel?.completionRate ?? 0}%) <ArrowRight className="w-3 h-3 text-[#5E6B75]" /></span>
-            <span className="flex items-center gap-1">Certified ({funnel?.certificationRate ?? 0}%) <ArrowRight className="w-3 h-3 text-[#5E6B75]" /></span>
-            <span className="flex items-center gap-1">Placed ({funnel?.placementRate ?? 0}%) <ArrowRight className="w-3 h-3 text-[#5E6B75]" /></span>
-            <span className="flex items-center gap-1">Employed ({funnel?.employmentRate ?? 0}%) <ArrowRight className="w-3 h-3 text-[#5E6B75]" /></span>
-            <span className="flex items-center gap-1">Retained ({funnel?.retentionRate ?? 0}%) <ArrowRight className="w-3 h-3 text-[#5E6B75]" /></span>
-            <span>Salary Lift (+{funnel?.salaryProgression?.medianDeltaPercent ?? 0}%)</span>
-          </div>
-        </div>
-
-        {/* SECTION 2 & 3: Outcome Distribution + Longitudinal Retention Trend */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          
-          {/* Outcome Distribution */}
-          <div className="lg:col-span-6 bg-[#FAF7EE] border border-[#DCE3E7] rounded-lg p-5 sm:p-6 shadow-xs space-y-4">
-            <div className="border-b border-[#DCE3E7] pb-3">
-              <span className="text-xs font-mono uppercase tracking-wider text-[#087F8C] block font-semibold">
-                Outcome Architecture
-              </span>
-              <h3 className="text-base font-serif font-bold text-[#16212B]">
-                Employment Outcome Distribution
-              </h3>
-              <p className="text-xs text-[#5E6B75]">
-                Classified from validated public.outcomes and public.employment_records
-              </p>
-            </div>
-
-            {(!analytics?.outcomeDistribution || analytics.outcomeDistribution.length === 0) ? (
-              <div className="p-6 text-center text-xs font-mono text-[#5E6B75]">
-                No outcome distribution records available for selected filters.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {analytics.outcomeDistribution.map((item, idx) => (
-                  <div key={idx} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs font-mono">
-                      <span className="font-semibold text-[#16212B]">{item.type}</span>
-                      <span className="text-[#5E6B75]">
-                        <strong className="text-[#18324A]">{item.count}</strong> trainees ({item.percentage}%)
-                      </span>
+                {/* Outcome Type Distribution (Wage vs Self vs Apprentice) */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+                    <div className="text-xs font-mono font-bold text-[#5E6B75] uppercase">Wage Employed</div>
+                    <div className="text-3xl font-mono font-bold text-[#18324A] mt-2">
+                      {intelligence.kpis.wageEmployed}
                     </div>
-                    <div className="w-full bg-[#EDE8D5] h-2.5 rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          item.type === 'Employed' ? 'bg-[#087F8C]' :
-                          item.type === 'Self-employed' ? 'bg-[#E6A23C]' :
-                          item.type === 'Apprenticeship' ? 'bg-[#15803D]' : 'bg-[#5E6B75]'
-                        }`}
-                        style={{ width: `${Math.min(item.percentage, 100)}%` }}
-                      />
-                    </div>
+                    <p className="text-xs text-[#5E6B75] mt-1">Formally employed with verified monthly payroll</p>
                   </div>
-                ))}
+                  <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+                    <div className="text-xs font-mono font-bold text-[#5E6B75] uppercase">Self Employed</div>
+                    <div className="text-3xl font-mono font-bold text-[#18324A] mt-2">
+                      {intelligence.kpis.selfEmployed}
+                    </div>
+                    <p className="text-xs text-[#5E6B75] mt-1">Registered enterprise or micro-entrepreneurship</p>
+                  </div>
+                  <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+                    <div className="text-xs font-mono font-bold text-[#5E6B75] uppercase">Apprenticeship</div>
+                    <div className="text-3xl font-mono font-bold text-[#18324A] mt-2">
+                      {intelligence.kpis.apprenticeship}
+                    </div>
+                    <p className="text-xs text-[#5E6B75] mt-1">Formal NATS/NAPS apprenticeship engagement</p>
+                  </div>
+                </div>
               </div>
             )}
-          </div>
 
-          {/* Longitudinal Retention Trend */}
-          <div className="lg:col-span-6 bg-[#FAF7EE] border border-[#DCE3E7] rounded-lg p-5 sm:p-6 shadow-xs space-y-4">
-            <div className="border-b border-[#DCE3E7] pb-3">
-              <span className="text-xs font-mono uppercase tracking-wider text-[#087F8C] block font-semibold">
-                Longitudinal Stability
-              </span>
-              <h3 className="text-base font-serif font-bold text-[#16212B]">
-                Retention Trend by Milestone
-              </h3>
-              <p className="text-xs text-[#5E6B75]">
-                Observed from multi-milestone employer validations and follow-up pulses
-              </p>
-            </div>
+            {/* VIEW 3: PROGRAMMES (Section 12 - Factual Comparison) */}
+            {activeTab === 'programmes' && (
+              <div className="space-y-6">
+                <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+                  <h2 className="text-lg font-bold text-[#18324A]">Programme Outcome Analytics</h2>
+                  <p className="text-xs text-[#5E6B75] mt-1">
+                    Factual comparison of accredited programmes across providers. No subjective "best" or "worst" badges.
+                  </p>
+                </div>
 
-            {(!analytics?.retentionTrend || analytics.retentionTrend.length === 0) ? (
-              <div className="p-6 text-center text-xs font-mono text-[#5E6B75]">
-                No retention observations available yet.
-              </div>
-            ) : (
-              <div className="grid grid-cols-3 gap-3 pt-2">
-                {analytics.retentionTrend.map((trend, idx) => (
-                  <div key={idx} className="bg-white border border-[#DCE3E7] rounded-lg p-4 text-center space-y-2 shadow-2xs">
-                    <span className="text-xs font-mono uppercase font-bold text-[#5E6B75] block">
-                      {trend.milestone}
-                    </span>
-                    <div className="text-2xl font-serif font-bold text-[#15803D]">
-                      {trend.rate}%
-                    </div>
-                    <div className="text-[10px] font-mono text-[#5E6B75]">
-                      {trend.verifiedCount} / {trend.sampleSize} verified
-                    </div>
-                    <div className="w-full bg-[#EDE8D5] h-1.5 rounded-full overflow-hidden mt-1">
-                      <div 
-                        className="bg-[#15803D] h-full rounded-full"
-                        style={{ width: `${Math.min(trend.rate, 100)}%` }}
-                      />
-                    </div>
+                <div className="bg-white border border-[#DCE3E7] rounded-lg overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead className="bg-[#FAF9F5] border-b border-[#DCE3E7] text-[#5E6B75]">
+                        <tr>
+                          <th className="py-2.5 px-4 font-semibold">Programme Title</th>
+                          <th className="py-2.5 px-4 font-semibold">Sector</th>
+                          <th className="py-2.5 px-4 font-semibold">Provider</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Trainees</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Completion</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Certification</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Outcome Recorded</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Retention (6M)</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Skill Gaps</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#DCE3E7]">
+                        {intelligence.programmes.length === 0 ? (
+                          <tr>
+                            <td colSpan={9} className="py-8 text-center text-[#5E6B75]">
+                              No programme records found for current filter.
+                            </td>
+                          </tr>
+                        ) : (
+                          intelligence.programmes.map((p, idx) => (
+                            <tr key={idx} className="hover:bg-[#FAF9F5]/80 transition-colors">
+                              <td className="py-3 px-4 font-bold text-[#18324A]">{p.courseTitle}</td>
+                              <td className="py-3 px-4 text-[#5E6B75]">{p.sector}</td>
+                              <td className="py-3 px-4 text-[#18324A]">{p.providerName}</td>
+                              <td className="py-3 px-4 text-right font-bold">{p.trainees}</td>
+                              <td className="py-3 px-4 text-right">
+                                {p.completionRate !== null ? `${p.completionRate}%` : 'N/A'}
+                              </td>
+                              <td className="py-3 px-4 text-right text-[#087F8C] font-semibold">
+                                {p.certificationRate !== null ? `${p.certificationRate}%` : 'N/A'}
+                              </td>
+                              <td className="py-3 px-4 text-right text-emerald-700 font-bold">
+                                {p.employmentRate !== null ? `${p.employmentRate}%` : 'N/A'}
+                              </td>
+                              <td className="py-3 px-4 text-right">
+                                {p.hasRetentionData ? `${p.retentionRate}%` : <span className="text-amber-800 text-[10px]">Pending obs.</span>}
+                              </td>
+                              <td className="py-3 px-4 text-right text-[#E6A23C] font-semibold">
+                                {p.skillGaps}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
                   </div>
-                ))}
+                </div>
               </div>
             )}
-          </div>
 
-        </div>
+            {/* VIEW 4: PROVIDERS (Section 13 - Factual Comparison) */}
+            {activeTab === 'providers' && (
+              <div className="space-y-6">
+                <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+                  <h2 className="text-lg font-bold text-[#18324A]">Training Provider Outcome Telemetry</h2>
+                  <p className="text-xs text-[#5E6B75] mt-1">
+                    Aggregate verification statistics by accredited training institution. Trainee PII is omitted.
+                  </p>
+                </div>
 
-        {/* SECTION 4 & 5: Skill Gap Distribution + Provider Comparison */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          
-          {/* Skill Gap Distribution */}
-          <div className="lg:col-span-6 bg-[#FAF7EE] border border-[#DCE3E7] rounded-lg p-5 sm:p-6 shadow-xs space-y-4">
-            <div className="border-b border-[#DCE3E7] pb-3">
-              <span className="text-xs font-mono uppercase tracking-wider text-[#087F8C] block font-semibold">
-                Competency Deficiencies
-              </span>
-              <h3 className="text-base font-serif font-bold text-[#16212B]">
-                Top Observed Competency Gaps
-              </h3>
-              <p className="text-xs text-[#5E6B75]">
-                Derived from public.skill_gaps and trainee diagnostic assessments
-              </p>
-            </div>
-
-            {(!analytics?.skillGaps || analytics.skillGaps.length === 0) ? (
-              <div className="p-6 text-center text-xs font-mono text-[#5E6B75]">
-                No skill gap records currently flagged in the system.
+                <div className="bg-white border border-[#DCE3E7] rounded-lg overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead className="bg-[#FAF9F5] border-b border-[#DCE3E7] text-[#5E6B75]">
+                        <tr>
+                          <th className="py-2.5 px-4 font-semibold">Training Partner</th>
+                          <th className="py-2.5 px-4 font-semibold">Accreditation ID</th>
+                          <th className="py-2.5 px-4 font-semibold">District Cluster</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Trainees</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Completion</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Certification</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Outcome Recorded</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Retention (6M)</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Skill Gaps</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#DCE3E7]">
+                        {intelligence.providers.length === 0 ? (
+                          <tr>
+                            <td colSpan={9} className="py-8 text-center text-[#5E6B75]">
+                              No provider records found.
+                            </td>
+                          </tr>
+                        ) : (
+                          intelligence.providers.map((pr, idx) => (
+                            <tr key={idx} className="hover:bg-[#FAF9F5]/80 transition-colors">
+                              <td className="py-3 px-4 font-bold text-[#18324A]">{pr.providerName}</td>
+                              <td className="py-3 px-4 text-[#5E6B75]">{pr.accreditationId}</td>
+                              <td className="py-3 px-4 text-[#18324A]">{pr.district}</td>
+                              <td className="py-3 px-4 text-right font-bold">{pr.trainees}</td>
+                              <td className="py-3 px-4 text-right">
+                                {pr.completionRate !== null ? `${pr.completionRate}%` : 'N/A'}
+                              </td>
+                              <td className="py-3 px-4 text-right text-[#087F8C] font-semibold">
+                                {pr.certificationRate !== null ? `${pr.certificationRate}%` : 'N/A'}
+                              </td>
+                              <td className="py-3 px-4 text-right text-emerald-700 font-bold">
+                                {pr.employmentRate !== null ? `${pr.employmentRate}%` : 'N/A'}
+                              </td>
+                              <td className="py-3 px-4 text-right">
+                                {pr.hasRetentionData ? `${pr.retentionRate}%` : <span className="text-amber-800 text-[10px]">Pending obs.</span>}
+                              </td>
+                              <td className="py-3 px-4 text-right text-[#E6A23C] font-semibold">
+                                {pr.skillGaps}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
-            ) : (
-              <div className="space-y-3">
-                {analytics.skillGaps.map((gap, idx) => (
-                  <div key={idx} className="bg-white border border-[#DCE3E7] rounded p-3 flex items-center justify-between shadow-2xs">
+            )}
+
+            {/* VIEW 5: DISTRICTS (Section 10 - Table + Horizontal Bars) */}
+            {activeTab === 'districts' && (
+              <div className="space-y-6">
+                <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+                  <h2 className="text-lg font-bold text-[#18324A]">District-Level Outcome Analytics</h2>
+                  <p className="text-xs text-[#5E6B75] mt-1">
+                    Telemetry aggregated across candidate residence districts. No fabricated heatmaps or synthetic geographic coordinates.
+                  </p>
+                </div>
+
+                <div className="bg-white border border-[#DCE3E7] rounded-lg overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead className="bg-[#FAF9F5] border-b border-[#DCE3E7] text-[#5E6B75]">
+                        <tr>
+                          <th className="py-2.5 px-4 font-semibold">District Name</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Trainees</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Completion</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Certification</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Outcome Recorded</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Retention (6M)</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Skill Deficits</th>
+                          <th className="py-2.5 px-4 font-semibold min-w-[160px]">Placement Progress</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#DCE3E7]">
+                        {intelligence.districts.length === 0 ? (
+                          <tr>
+                            <td colSpan={8} className="py-8 text-center text-[#5E6B75]">
+                              No district records found.
+                            </td>
+                          </tr>
+                        ) : (
+                          intelligence.districts.map((d, idx) => {
+                            const empRate = d.employmentRate || 0;
+                            return (
+                              <tr key={idx} className="hover:bg-[#FAF9F5]/80 transition-colors">
+                                <td className="py-3 px-4 font-bold text-[#18324A]">{d.district}</td>
+                                <td className="py-3 px-4 text-right font-bold">{d.trainees}</td>
+                                <td className="py-3 px-4 text-right">
+                                  {d.completionRate !== null ? `${d.completionRate}%` : 'N/A'}
+                                </td>
+                                <td className="py-3 px-4 text-right text-[#087F8C]">
+                                  {d.certificationRate !== null ? `${d.certificationRate}%` : 'N/A'}
+                                </td>
+                                <td className="py-3 px-4 text-right text-emerald-700 font-bold">
+                                  {d.employmentRate !== null ? `${d.employmentRate}%` : 'N/A'}
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  {d.hasRetentionData ? `${d.retentionRate}%` : <span className="text-amber-800 text-[10px]">Pending obs.</span>}
+                                </td>
+                                <td className="py-3 px-4 text-right text-[#E6A23C] font-semibold">{d.skillGaps}</td>
+                                <td className="py-3 px-4">
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex-1 bg-[#DCE3E7] rounded-full h-2 overflow-hidden">
+                                      <div 
+                                        className="bg-[#087F8C] h-full rounded-full transition-all"
+                                        style={{ width: `${Math.min(100, Math.max(0, empRate))}%` }}
+                                      />
+                                    </div>
+                                    <span className="text-[10px] font-bold text-[#18324A]">{empRate}%</span>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* VIEW 6: SKILL GAPS (Section 17 & 18 - Prioritization by Factual Filters) */}
+            {activeTab === 'skills' && (
+              <div className="space-y-6">
+                <div className="bg-white border border-[#DCE3E7] rounded-lg p-5 flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <h2 className="text-lg font-bold text-[#18324A]">Government Skill Gap Intelligence</h2>
+                    <p className="text-xs text-[#5E6B75] mt-1">
+                      Aggregated competency deficits identified in longitudinal and employer assessments.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono text-[#5E6B75]">Order by:</span>
+                    <div className="inline-flex rounded border border-[#DCE3E7] p-0.5 bg-[#FAF9F5] text-xs font-mono">
+                      <button
+                        onClick={() => setSkillSort('affected')}
+                        className={`px-2 py-1 rounded transition-colors ${skillSort === 'affected' ? 'bg-[#18324A] text-white font-bold' : 'text-[#5E6B75]'}`}
+                      >
+                        Highest Affected
+                      </button>
+                      <button
+                        onClick={() => setSkillSort('gap')}
+                        className={`px-2 py-1 rounded transition-colors ${skillSort === 'gap' ? 'bg-[#18324A] text-white font-bold' : 'text-[#5E6B75]'}`}
+                      >
+                        Largest Gap
+                      </button>
+                      <button
+                        onClick={() => setSkillSort('severity')}
+                        className={`px-2 py-1 rounded transition-colors ${skillSort === 'severity' ? 'bg-[#18324A] text-white font-bold' : 'text-[#5E6B75]'}`}
+                      >
+                        Highest Severity
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-[#DCE3E7] rounded-lg overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead className="bg-[#FAF9F5] border-b border-[#DCE3E7] text-[#5E6B75]">
+                        <tr>
+                          <th className="py-2.5 px-4 font-semibold">Competency / Skill Area</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Affected Trainees</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Average Observed Score</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Benchmark Required</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Observed Gap</th>
+                          <th className="py-2.5 px-4 font-semibold">Severity</th>
+                          <th className="py-2.5 px-4 font-semibold">Programme Association</th>
+                          <th className="py-2.5 px-4 font-semibold">District Cluster</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#DCE3E7]">
+                        {sortedSkillGaps.length === 0 ? (
+                          <tr>
+                            <td colSpan={8} className="py-8 text-center text-[#5E6B75]">
+                              No skill gaps recorded in current observation dataset.
+                            </td>
+                          </tr>
+                        ) : (
+                          sortedSkillGaps.map((sg, idx) => (
+                            <tr key={idx} className="hover:bg-[#FAF9F5]/80 transition-colors">
+                              <td className="py-3 px-4 font-bold text-[#18324A]">{sg.skillName}</td>
+                              <td className="py-3 px-4 text-right font-bold text-red-700">{sg.affectedTraineesCount}</td>
+                              <td className="py-3 px-4 text-right">{sg.averageScore} / 100</td>
+                              <td className="py-3 px-4 text-right text-[#5E6B75]">{sg.benchmarkScore} / 100</td>
+                              <td className="py-3 px-4 text-right font-bold text-amber-700">-{sg.gap} pts</td>
+                              <td className="py-3 px-4">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  sg.severity === 'HIGH' ? 'bg-red-100 text-red-800' :
+                                  sg.severity === 'MEDIUM' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
+                                }`}>
+                                  {sg.severity}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 text-[#18324A]">{sg.programme}</td>
+                              <td className="py-3 px-4 text-[#5E6B75]">{sg.district}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* VIEW 7: NON-PLACEMENT (Section 19 - Real NOT_EMPLOYED records) */}
+            {activeTab === 'non-placement' && (
+              <div className="space-y-6">
+                <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+                  <h2 className="text-lg font-bold text-[#18324A]">Non-Placement Reason Intelligence</h2>
+                  <p className="text-xs text-[#5E6B75] mt-1">
+                    Telemetry derived from NOT_EMPLOYED candidate dossiers and unplaced trainee audit trails.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  
+                  {/* Summary Metric Card */}
+                  <div className="bg-white border border-[#DCE3E7] rounded-lg p-5 flex flex-col justify-between">
                     <div>
-                      <div className="font-bold text-xs text-[#16212B]">{gap.skillName}</div>
-                      <div className="text-[10px] font-mono text-[#5E6B75]">
-                        {gap.traineeCount} Trainees Evaluated · Avg Diagnostic Score: {gap.avgScore}%
+                      <div className="text-xs font-mono font-bold text-[#5E6B75] uppercase">Total Trainees Seeking Placement</div>
+                      <div className="text-4xl font-mono font-bold text-[#18324A] mt-2">
+                        {intelligence.nonPlacement.totalNotEmployed}
+                      </div>
+                      <div className="text-xs font-mono text-[#E6A23C] font-semibold mt-1">
+                        {intelligence.kpis.nonPlacementRate}% non-placement rate
                       </div>
                     </div>
-                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-semibold ${
-                      gap.severity === 'HIGH' ? 'bg-red-100 text-red-800 border border-red-300' :
-                      gap.severity === 'MEDIUM' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
-                      'bg-blue-100 text-blue-800 border border-blue-300'
-                    }`}>
-                      {gap.severity} Priority
+                    <div className="mt-6 pt-3 border-t border-[#DCE3E7] text-xs text-[#5E6B75] leading-relaxed">
+                      Candidates actively enrolled in placement assistance, interview scheduling, or further skill upgrade modules.
+                    </div>
+                  </div>
+
+                  {/* Reasons Breakdown Table */}
+                  <div className="md:col-span-2 bg-white border border-[#DCE3E7] rounded-lg overflow-hidden">
+                    <div className="p-4 border-b border-[#DCE3E7] font-mono text-xs font-bold text-[#18324A] uppercase">
+                      Reported Reasons from Trainee Registries
+                    </div>
+
+                    {intelligence.nonPlacement.reasons.length === 0 ? (
+                      <div className="p-8 text-center text-[#5E6B75] font-mono text-xs">
+                        No non-placement records logged for the active filter scope.
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-[#DCE3E7]">
+                        {intelligence.nonPlacement.reasons.map((r, idx) => (
+                          <div key={idx} className="p-4 flex items-center justify-between gap-4 hover:bg-[#FAF9F5]/80 transition-colors">
+                            <div className="flex-1">
+                              <div className="text-xs font-mono font-bold text-[#18324A]">{r.reason}</div>
+                              <div className="mt-1.5 w-full bg-[#DCE3E7] rounded-full h-1.5 overflow-hidden">
+                                <div 
+                                  className="bg-[#E6A23C] h-full rounded-full transition-all"
+                                  style={{ width: `${Math.min(100, Math.max(0, r.percentage))}%` }}
+                                />
+                              </div>
+                            </div>
+                            <div className="text-right font-mono shrink-0">
+                              <span className="text-sm font-bold text-[#18324A]">{r.count}</span>
+                              <span className="text-xs text-[#5E6B75] ml-1.5">({r.percentage}%)</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              </div>
+            )}
+
+            {/* VIEW 8: ATTRITION (Section 20 - Data Sufficiency Handling) */}
+            {activeTab === 'attrition' && (
+              <div className="space-y-6">
+                <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+                  <h2 className="text-lg font-bold text-[#18324A]">Cohort Attrition & Retention Observations</h2>
+                  <p className="text-xs text-[#5E6B75] mt-1">
+                    Formal audit of enrollments versus non-completion dropouts across the training lifecycle.
+                  </p>
+                </div>
+
+                <div className="bg-white border border-[#DCE3E7] rounded-lg p-6">
+                  {intelligence.kpis.attrition.hasSufficientData ? (
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 font-mono text-xs">
+                      <div className="p-4 bg-[#FAF9F5] border border-[#DCE3E7] rounded">
+                        <div className="text-[#5E6B75]">Enrolled Trainees</div>
+                        <div className="text-2xl font-bold text-[#18324A] mt-1">{intelligence.kpis.attrition.enrolled}</div>
+                      </div>
+                      <div className="p-4 bg-[#FAF9F5] border border-[#DCE3E7] rounded">
+                        <div className="text-[#5E6B75]">Completed Trainees</div>
+                        <div className="text-2xl font-bold text-[#18324A] mt-1">{intelligence.kpis.attrition.completed}</div>
+                      </div>
+                      <div className="p-4 bg-[#FAF9F5] border border-[#DCE3E7] rounded">
+                        <div className="text-[#5E6B75]">Dropped Records</div>
+                        <div className="text-2xl font-bold text-red-700 mt-1">{intelligence.kpis.attrition.dropped}</div>
+                      </div>
+                      <div className="p-4 bg-[#FAF9F5] border border-[#DCE3E7] rounded">
+                        <div className="text-[#5E6B75]">Observed Dropout Rate</div>
+                        <div className="text-2xl font-bold text-[#18324A] mt-1">{intelligence.kpis.attrition.dropoutRate}%</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center bg-amber-50/60 border border-amber-200 rounded-lg">
+                      <AlertTriangle className="w-8 h-8 text-amber-700 mx-auto mb-2" />
+                      <div className="font-mono text-sm font-bold text-amber-900">
+                        {intelligence.kpis.attrition.label}
+                      </div>
+                      <p className="text-xs text-amber-800/80 mt-1 max-w-lg mx-auto">
+                        In accordance with NCVET telemetry standards, missing dropout records are not assumed to be zero attrition. Formal dropout telemetry requires provider enrollment disengagement logs.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* VIEW 9: INTERVENTIONS (Section 22, 23 & 24 - Closed-Loop Registry) */}
+            {activeTab === 'interventions' && (
+              <div className="space-y-6">
+                <div className="bg-white border border-[#DCE3E7] rounded-lg p-5 flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <h2 className="text-lg font-bold text-[#18324A]">Closed-Loop Policy Intervention Registry</h2>
+                    <p className="text-xs text-[#5E6B75] mt-1">
+                      Data-driven intervention tracking: Signal &rarr; Action Recorded &rarr; Follow-Up &rarr; Re-measurement.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setIsNewInterventionOpen(true)}
+                    className="px-3 py-1.5 bg-[#087F8C] hover:bg-[#087F8C]/90 text-white rounded text-xs font-mono font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <PlusCircle className="w-4 h-4" />
+                    <span>Record Policy Intervention</span>
+                  </button>
+                </div>
+
+                <div className="bg-white border border-[#DCE3E7] rounded-lg overflow-hidden">
+                  <div className="p-4 border-b border-[#DCE3E7] flex items-center justify-between font-mono text-xs">
+                    <span className="font-bold text-[#18324A] uppercase">
+                      Active Intervention Records in PostgreSQL Registry
+                    </span>
+                    <span className="text-[#5E6B75]">
+                      {intelligence.interventions.length} Items Logged
                     </span>
                   </div>
-                ))}
+
+                  {intelligence.interventions.length === 0 ? (
+                    <div className="p-8 text-center text-[#5E6B75] font-mono text-xs">
+                      No policy review interventions logged. Click "Record Policy Intervention" to log an area for action.
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-[#DCE3E7]">
+                      {intelligence.interventions.map((item) => (
+                        <div key={item.id} className="p-5 hover:bg-[#FAF9F5]/70 transition-colors">
+                          <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 bg-[#18324A] text-white rounded font-mono text-[10px] font-bold">
+                                {item.targetType}
+                              </span>
+                              <h3 className="font-bold text-sm text-[#18324A]">
+                                {item.targetName}
+                              </h3>
+                              <span className="text-xs text-[#5E6B75] font-mono">
+                                ({item.issueType})
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                                item.status === 'RESOLVED' ? 'bg-emerald-100 text-emerald-800' :
+                                item.status === 'ACTION_RECORDED' ? 'bg-blue-100 text-blue-800' :
+                                'bg-amber-100 text-amber-800'
+                              }`}>
+                                {item.status}
+                              </span>
+                              <button
+                                onClick={() => {
+                                  setSelectedInterventionForUpdate(item);
+                                  setUpdateInterventionForm({
+                                    status: item.status,
+                                    actionTaken: item.actionTaken || '',
+                                    followUpDate: item.followUpDate ? item.followUpDate.slice(0, 10) : '',
+                                    observedOutcomeNotes: item.observedOutcomeNotes || '',
+                                  });
+                                }}
+                                className="px-2 py-1 text-[11px] font-mono font-semibold text-[#087F8C] hover:bg-[#E7F5F4] rounded border border-[#087F8C]/40 cursor-pointer"
+                              >
+                                Update Status
+                              </button>
+                            </div>
+                          </div>
+
+                          <p className="text-xs text-[#16212B] leading-relaxed mb-3">
+                            {item.description}
+                          </p>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-[#FAF9F5] p-3 rounded border border-[#DCE3E7] text-[11px] font-mono">
+                            <div>
+                              <span className="text-[#5E6B75] block">Action Logged:</span>
+                              <span className="font-semibold text-[#18324A]">{item.actionTaken || 'Pending review'}</span>
+                            </div>
+                            <div>
+                              <span className="text-[#5E6B75] block">Follow-Up Date:</span>
+                              <span className="font-semibold text-[#18324A]">
+                                {item.followUpDate ? new Date(item.followUpDate).toLocaleDateString() : 'Unscheduled'}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[#5E6B75] block">Re-measurement Observation:</span>
+                              <span className="font-semibold text-emerald-800">
+                                {item.observedOutcomeNotes || 'Outcome re-measurement pending'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
-          </div>
 
-          {/* Provider Performance Comparison */}
-          <div className="lg:col-span-6 bg-[#FAF7EE] border border-[#DCE3E7] rounded-lg p-5 sm:p-6 shadow-xs space-y-4">
-            <div className="border-b border-[#DCE3E7] pb-3">
-              <span className="text-xs font-mono uppercase tracking-wider text-[#087F8C] block font-semibold">
-                Accreditation Benchmarking
-              </span>
-              <h3 className="text-base font-serif font-bold text-[#16212B]">
-                Training Partner Performance Comparison
-              </h3>
-              <p className="text-xs text-[#5E6B75]">
-                Aggregated outcomes for authorized vocational training providers
-              </p>
-            </div>
+            {/* VIEW 10: FOLLOW-UPS (Section 21 - Longitudinal Coverage) */}
+            {activeTab === 'follow-ups' && (
+              <div className="space-y-6">
+                <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+                  <h2 className="text-lg font-bold text-[#18324A]">Longitudinal Follow-up Coverage</h2>
+                  <p className="text-xs text-[#5E6B75] mt-1">
+                    Aggregate post-placement survey verification coverage across accredited providers.
+                  </p>
+                </div>
 
-            {(!analytics?.providerComparison || analytics.providerComparison.length === 0) ? (
-              <div className="p-6 text-center text-xs font-mono text-[#5E6B75]">
-                No provider comparison records available.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="bg-[#EDE8D5] border-b border-[#DCE3E7] font-mono text-[10px] text-[#18324A] uppercase">
-                      <th className="py-2.5 px-3">Provider Name</th>
-                      <th className="py-2.5 px-2 text-center">Trained</th>
-                      <th className="py-2.5 px-2 text-center">Completion</th>
-                      <th className="py-2.5 px-2 text-center">Certified</th>
-                      <th className="py-2.5 px-2 text-center">Placement</th>
-                      <th className="py-2.5 px-3 text-right">Avg Salary</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#EDE8D5] font-mono">
-                    {analytics.providerComparison.map((p, idx) => (
-                      <tr key={idx} className="hover:bg-white transition-colors">
-                        <td className="py-2.5 px-3 font-sans font-semibold text-[#16212B]">
-                          {p.providerName}
-                        </td>
-                        <td className="py-2.5 px-2 text-center text-[#18324A]">
-                          {p.totalTrainees}
-                        </td>
-                        <td className="py-2.5 px-2 text-center font-bold text-[#087F8C]">
-                          {p.completionRate}%
-                        </td>
-                        <td className="py-2.5 px-2 text-center text-[#E6A23C] font-semibold">
-                          {p.certificationRate}%
-                        </td>
-                        <td className="py-2.5 px-2 text-center text-[#15803D] font-bold">
-                          {p.placementRate}%
-                        </td>
-                        <td className="py-2.5 px-3 text-right text-[#18324A] font-medium">
-                          ₹{p.avgSalary.toLocaleString()}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+                    <div className="text-xs font-mono font-bold text-[#5E6B75] uppercase">Assigned Surveys</div>
+                    <div className="text-3xl font-mono font-bold text-[#18324A] mt-2">
+                      {intelligence.kpis.followUps.assigned}
+                    </div>
+                    <p className="text-xs text-[#5E6B75] mt-1">Total scheduled longitudinal milestones</p>
+                  </div>
+                  <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+                    <div className="text-xs font-mono font-bold text-[#5E6B75] uppercase">Completed & Verified</div>
+                    <div className="text-3xl font-mono font-bold text-emerald-700 mt-2">
+                      {intelligence.kpis.followUps.completed}
+                    </div>
+                    <p className="text-xs text-[#5E6B75] mt-1">Successfully recorded 3-party verification</p>
+                  </div>
+                  <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+                    <div className="text-xs font-mono font-bold text-[#5E6B75] uppercase">Pending Verification</div>
+                    <div className="text-3xl font-mono font-bold text-amber-700 mt-2">
+                      {intelligence.kpis.followUps.pending}
+                    </div>
+                    <p className="text-xs text-[#5E6B75] mt-1">In progress with training provider</p>
+                  </div>
+                  <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+                    <div className="text-xs font-mono font-bold text-[#5E6B75] uppercase">Overdue Records</div>
+                    <div className="text-3xl font-mono font-bold text-red-700 mt-2">
+                      {intelligence.kpis.followUps.overdue}
+                    </div>
+                    <p className="text-xs text-[#5E6B75] mt-1">Milestones past target observation date</p>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-[#DCE3E7] rounded-lg p-6">
+                  <h3 className="font-mono text-xs font-bold text-[#18324A] uppercase mb-2">
+                    National Coverage Ratio
+                  </h3>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 bg-[#DCE3E7] rounded-full h-3 overflow-hidden">
+                      <div 
+                        className="bg-[#087F8C] h-full rounded-full transition-all"
+                        style={{ width: `${Math.min(100, Math.max(0, intelligence.kpis.followUps.completionRate || 0))}%` }}
+                      />
+                    </div>
+                    <span className="font-mono font-bold text-sm text-[#18324A]">
+                      {intelligence.kpis.followUps.completionRate || 0}%
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#5E6B75] mt-2">
+                    Longitudinal surveys are verified via employer sign-off or EPFO employment active records.
+                  </p>
+                </div>
               </div>
             )}
-          </div>
 
-        </div>
+          </>
+        )}
 
-        {/* SECTION 6: District Outcome Map / Table */}
-        <div className="bg-[#FAF7EE] border border-[#DCE3E7] rounded-lg p-6 shadow-xs space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#DCE3E7] pb-4">
-            <div>
-              <div className="inline-flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider text-[#087F8C] font-semibold">
-                <BarChart3 className="w-3.5 h-3.5 text-[#087F8C]" />
-                Section 06 · District Longitudinal Wage Multipliers
-              </div>
-              <h2 className="text-lg sm:text-xl font-serif font-bold text-[#16212B]">
-                Sovereign Wage Progression & Retention Benchmarks by Cluster
-              </h2>
-            </div>
-          </div>
+      </div>
 
-          {/* District Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-[#EDE8D5] border-b border-[#DCE3E7] font-mono text-[11px] text-[#18324A] uppercase tracking-wider">
-                  <th className="py-3 px-3">Industrial Cluster / District</th>
-                  <th className="py-3 px-3">Active Beneficiaries</th>
-                  <th className="py-3 px-3 text-center">6M Retention</th>
-                  <th className="py-3 px-3 text-center">12M Retention</th>
-                  <th className="py-3 px-3">Starting Wage</th>
-                  <th className="py-3 px-3">Current Wage</th>
-                  <th className="py-3 px-3">Longitudinal Delta</th>
-                  <th className="py-3 px-3">Compliance Rate</th>
-                  <th className="py-3 px-3">Anchor Industry</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#EDE8D5] font-mono">
-                {districts.map((item, idx) => (
-                  <tr 
-                    key={idx} 
-                    className="hover:bg-[#F2EFE4] transition-colors"
-                  >
-                    <td className="py-3 px-3 font-sans font-bold text-[#16212B]">
-                      {item.district}
-                    </td>
-
-                    <td className="py-3 px-3 text-[#18324A]">
-                      {item.activeTrainees.toLocaleString('en-IN')}
-                    </td>
-
-                    <td className="py-3 px-3 text-center">
-                      <span className="inline-flex items-center gap-1 font-bold text-[#164627] bg-[#D8EEDF] px-2 py-0.5 rounded border border-[#B6DBC0]">
-                        <CheckCircle2 className="w-3 h-3 text-[#15803D]" />
-                        {item.retention6m}%
-                      </span>
-                    </td>
-
-                    <td className="py-3 px-3 text-center">
-                      <span className="font-semibold text-[#18324A]">
-                        {item.retention12m}%
-                      </span>
-                    </td>
-
-                    <td className="py-3 px-3 text-[#5E6B75]">
-                      {item.avgStartingWage}
-                    </td>
-
-                    <td className="py-3 px-3 font-bold text-[#16212B]">
-                      {item.avgCurrentWage}
-                    </td>
-
-                    <td className="py-3 px-3 font-bold text-[#15803D]">
-                      {item.wageDelta}
-                    </td>
-
-                    <td className="py-3 px-3 text-[#18324A]">
-                      {item.complianceRate}%
-                    </td>
-
-                    <td className="py-3 px-3 font-sans text-[#5E6B75] max-w-[200px] truncate">
-                      {item.leadEmployer}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-      </main>
-
-      {/* Metric Definitions Drawer/Modal */}
-      {isDefinitionModalOpen && (
+      {/* 4. Methodology & Data Definitions Drawer/Modal (Section 7) */}
+      {isMethodologyOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-[#FAF7EE] border border-[#DCE3E7] rounded-lg max-w-2xl w-full max-h-[85vh] flex flex-col shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-4 border-b border-[#DCE3E7] bg-white">
+          <div className="bg-white border border-[#DCE3E7] rounded-xl max-w-2xl w-full max-h-[85vh] overflow-y-auto shadow-2xl p-6">
+            <div className="flex items-center justify-between pb-3 border-b border-[#DCE3E7] mb-4">
               <div className="flex items-center gap-2">
-                <BookOpen className="w-5 h-5 text-[#18324A]" />
-                <h3 className="font-serif font-bold text-lg text-[#16212B]">
-                  Government Outcome Metric Definitions & Methodology
+                <BookOpen className="w-5 h-5 text-[#087F8C]" />
+                <h3 className="font-bold text-base text-[#18324A]">
+                  Institutional Methodology & Metric Definitions
                 </h3>
               </div>
               <button 
-                onClick={() => setIsDefinitionModalOpen(false)}
-                className="text-[#5E6B75] hover:text-[#16212B] cursor-pointer"
+                onClick={() => setIsMethodologyOpen(false)}
+                className="text-[#5E6B75] hover:text-[#16212B] p-1 cursor-pointer"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="p-5 overflow-y-auto space-y-4 text-xs font-mono divide-y divide-[#DCE3E7]">
-              
-              <div className="pt-2 first:pt-0 space-y-1">
-                <div className="font-bold text-sm text-[#18324A]">KPI 1: Total Trainees</div>
-                <div className="text-[#5E6B75]">Definition: Total number of eligible registered beneficiaries in the training cohort.</div>
-                <div className="text-[#16212B] font-medium">Source Table: <span className="text-[#087F8C]">public.trainees</span></div>
-                <div className="text-[#16212B] font-medium">Eligibility: All valid trainee profiles matching filter criteria.</div>
-                <div className="text-[#15803D]">Formula: COUNT(id) FROM trainees</div>
+            <div className="space-y-4 text-xs font-mono leading-relaxed text-[#16212B]">
+              <div className="p-3 bg-[#FAF9F5] border border-[#DCE3E7] rounded">
+                <strong className="text-[#18324A] block mb-1">Non-Causal Telemetry Principle</strong>
+                The platform records factual post-training trajectory observations. Unless a dedicated randomized control or econometric evaluation is performed, metrics are labelled:
+                <div className="mt-1 text-[#087F8C] font-semibold">
+                  &bull; "Outcome recorded after training" (not "Training caused employment")<br />
+                  &bull; "Observed salary change" (not "Training raised wage")<br />
+                  &bull; "Observed retention" (not "Training ensured job security")
+                </div>
               </div>
 
-              <div className="pt-3 space-y-1">
-                <div className="font-bold text-sm text-[#18324A]">KPI 2: Training Completed</div>
-                <div className="text-[#5E6B75]">Definition: Number of trainees with completed training milestone.</div>
-                <div className="text-[#16212B] font-medium">Source Tables: <span className="text-[#087F8C]">public.trainees, public.outcomes</span></div>
-                <div className="text-[#16212B] font-medium">Calculation: completed_count / total_trainees × 100</div>
+              <div>
+                <strong className="text-[#18324A] block">1. Training Completion Rate</strong>
+                <p className="text-[#5E6B75]">
+                  Completed training records / eligible enrolled trainee records. Determined by cohort end date or verified course completion certificate.
+                </p>
               </div>
 
-              <div className="pt-3 space-y-1">
-                <div className="font-bold text-sm text-[#18324A]">KPI 3: Certification Rate</div>
-                <div className="text-[#5E6B75]">Definition: Eligible trainees with a valid NCVET credential record divided by completed trainees.</div>
-                <div className="text-[#16212B] font-medium">Source Table: <span className="text-[#087F8C]">public.certifications</span></div>
-                <div className="text-[#15803D]">Formula: certified_count / completed_count × 100 (Safe division against zero)</div>
+              <div>
+                <strong className="text-[#18324A] block">2. Certification Rate</strong>
+                <p className="text-[#5E6B75]">
+                  Verified certificates issued / completed trainees. Assessment records verified by accredited awarding body.
+                </p>
               </div>
 
-              <div className="pt-3 space-y-1">
-                <div className="font-bold text-sm text-[#18324A]">KPI 4: Placed (Reported & Validated)</div>
-                <div className="text-[#5E6B75]">Definition: Trainees with recorded placement/employment outcome, distinguishing reported vs validated.</div>
-                <div className="text-[#16212B] font-medium">Source Tables: <span className="text-[#087F8C]">public.outcomes, public.employment_records</span></div>
-                <div className="text-[#15803D]">Formula: placed_count / completed_count × 100</div>
+              <div>
+                <strong className="text-[#18324A] block">3. Employment Outcome Rate</strong>
+                <p className="text-[#5E6B75]">
+                  Trainees with recorded employment outcome / eligible trainees. Encompasses wage employment, verified self-employment, and formal apprenticeships.
+                </p>
               </div>
 
-              <div className="pt-3 space-y-1">
-                <div className="font-bold text-sm text-[#18324A]">KPI 5: Currently Employed</div>
-                <div className="text-[#5E6B75]">Definition: Trainees whose latest valid outcome indicates active workforce employment without double counting.</div>
-                <div className="text-[#16212B] font-medium">Source Tables: <span className="text-[#087F8C]">public.employment_records (end_date IS NULL), public.follow_ups</span></div>
+              <div>
+                <strong className="text-[#18324A] block">4. 6-Month Retention</strong>
+                <p className="text-[#5E6B75]">
+                  Trainees with employment duration &ge; 180 days / eligible employed trainees placed at least 180 days prior to observation date. If observation window has not elapsed, displayed as "Insufficient observation data" rather than 0%.
+                </p>
               </div>
 
-              <div className="pt-3 space-y-1">
-                <div className="font-bold text-sm text-[#18324A]">KPI 6: Retention</div>
-                <div className="text-[#5E6B75]">Definition: Trainees who have reached the elapsed period (3M, 6M, 12M) with active retained status.</div>
-                <div className="text-[#16212B] font-medium">Source Tables: <span className="text-[#087F8C]">public.follow_ups, public.outcomes</span></div>
-                <div className="text-[#5E6B75]">Note: Displays "Insufficient follow-up data" if sample size is zero rather than inventing a percentage.</div>
+              <div>
+                <strong className="text-[#18324A] block">5. Salary Progression</strong>
+                <p className="text-[#5E6B75]">
+                  Observed delta between earliest baseline wage and latest current wage for trainees with valid historical salary records. If fewer than 2 salary observations exist, displayed as "Insufficient salary history".
+                </p>
               </div>
 
-              <div className="pt-3 space-y-1">
-                <div className="font-bold text-sm text-[#18324A]">KPI 7: Salary Progression</div>
-                <div className="text-[#5E6B75]">Definition: Median baseline vs latest current salary progression observed in longitudinal payroll records.</div>
-                <div className="text-[#16212B] font-medium">Source Tables: <span className="text-[#087F8C]">public.employment_records, public.outcomes</span></div>
-                <div className="text-[#5E6B75]">Attribution: "Observed salary change recorded after training" (non-causal language).</div>
+              <div className="pt-2 text-right">
+                <button
+                  onClick={() => setIsMethodologyOpen(false)}
+                  className="px-4 py-2 bg-[#18324A] text-white rounded font-bold hover:bg-[#18324A]/90 cursor-pointer"
+                >
+                  Close Methodology
+                </button>
               </div>
-
-            </div>
-
-            <div className="p-4 border-t border-[#DCE3E7] bg-white flex justify-end">
-              <button
-                onClick={() => setIsDefinitionModalOpen(false)}
-                className="px-4 py-2 bg-[#18324A] text-white rounded text-xs font-mono cursor-pointer hover:bg-[#0F253B] transition-colors"
-              >
-                Close Definitions
-              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Footer */}
-      <div className="border-t border-[#DCE3E7] bg-[#FAF7EE] py-3 px-4 text-center text-xs font-mono text-[#5E6B75]">
-        KaushalSetu Sovereign Observatory · Ministry of Skill Development and Entrepreneurship · Live PostgreSQL Sync
-      </div>
+      {/* 5. Modal: Record New Policy Intervention */}
+      {isNewInterventionOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-[#DCE3E7] rounded-xl max-w-lg w-full p-6 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-[#DCE3E7] mb-4">
+              <h3 className="font-bold text-base text-[#18324A]">
+                Record Policy Intervention Area
+              </h3>
+              <button onClick={() => setIsNewInterventionOpen(false)} className="text-[#5E6B75] hover:text-[#16212B]">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleRecordInterventionSubmit} className="space-y-3.5 text-xs font-mono">
+              <div>
+                <label className="block font-bold text-[#5E6B75] mb-1">Target Entity Type</label>
+                <select
+                  value={newIntervention.targetType}
+                  onChange={e => setNewIntervention({ ...newIntervention, targetType: e.target.value })}
+                  className="w-full bg-[#FAF9F5] border border-[#DCE3E7] rounded p-2 text-[#16212B] focus:outline-none"
+                >
+                  <option value="PROGRAMME">Programme</option>
+                  <option value="PROVIDER">Training Provider</option>
+                  <option value="DISTRICT">District Cluster</option>
+                  <option value="SKILL_GAP">Competency Domain</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#5E6B75] mb-1">Target Name / Identifier *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Industrial Automation / Centurion Skills"
+                  value={newIntervention.targetName}
+                  onChange={e => setNewIntervention({ ...newIntervention, targetName: e.target.value })}
+                  className="w-full bg-[#FAF9F5] border border-[#DCE3E7] rounded p-2 text-[#16212B] focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#5E6B75] mb-1">Observed Issue / Signal Type</label>
+                <select
+                  value={newIntervention.issueType}
+                  onChange={e => setNewIntervention({ ...newIntervention, issueType: e.target.value })}
+                  className="w-full bg-[#FAF9F5] border border-[#DCE3E7] rounded p-2 text-[#16212B] focus:outline-none"
+                >
+                  <option value="SKILL_DEFICIT">Significant Observed Skill Gap</option>
+                  <option value="NON_PLACEMENT_CONCENTRATION">High Non-Placement Concentration</option>
+                  <option value="FOLLOW_UP_DEFICIT">Low Follow-up Verification Rate</option>
+                  <option value="RETENTION_GAP">Retention Observation Deficit</option>
+                  <option value="OTHER_REVIEW">Other Area Requiring Review</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#5E6B75] mb-1">Evidence & Description *</label>
+                <textarea
+                  required
+                  rows={3}
+                  placeholder="Factual evidence observed from PostgreSQL telemetry..."
+                  value={newIntervention.description}
+                  onChange={e => setNewIntervention({ ...newIntervention, description: e.target.value })}
+                  className="w-full bg-[#FAF9F5] border border-[#DCE3E7] rounded p-2 text-[#16212B] focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#5E6B75] mb-1">Action Logged</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Curriculum update recommended to provider"
+                  value={newIntervention.actionTaken}
+                  onChange={e => setNewIntervention({ ...newIntervention, actionTaken: e.target.value })}
+                  className="w-full bg-[#FAF9F5] border border-[#DCE3E7] rounded p-2 text-[#16212B] focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#5E6B75] mb-1">Follow-Up Date</label>
+                <input
+                  type="date"
+                  value={newIntervention.followUpDate}
+                  onChange={e => setNewIntervention({ ...newIntervention, followUpDate: e.target.value })}
+                  className="w-full bg-[#FAF9F5] border border-[#DCE3E7] rounded p-2 text-[#16212B] focus:outline-none"
+                />
+              </div>
+
+              <div className="pt-3 flex items-center justify-end gap-2 border-t border-[#DCE3E7]">
+                <button
+                  type="button"
+                  onClick={() => setIsNewInterventionOpen(false)}
+                  className="px-3 py-1.5 text-[#5E6B75] hover:text-[#16212B] cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-[#087F8C] hover:bg-[#087F8C]/90 text-white rounded font-bold cursor-pointer"
+                >
+                  Save Intervention Record
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 6. Modal: Update Existing Intervention */}
+      {selectedInterventionForUpdate && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-[#DCE3E7] rounded-xl max-w-lg w-full p-6 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-[#DCE3E7] mb-4">
+              <div>
+                <h3 className="font-bold text-base text-[#18324A]">Update Intervention Record</h3>
+                <p className="text-xs text-[#5E6B75]">{selectedInterventionForUpdate.targetName}</p>
+              </div>
+              <button onClick={() => setSelectedInterventionForUpdate(null)} className="text-[#5E6B75] hover:text-[#16212B]">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateInterventionSubmit} className="space-y-3.5 text-xs font-mono">
+              <div>
+                <label className="block font-bold text-[#5E6B75] mb-1">Status</label>
+                <select
+                  value={updateInterventionForm.status}
+                  onChange={e => setUpdateInterventionForm({ ...updateInterventionForm, status: e.target.value })}
+                  className="w-full bg-[#FAF9F5] border border-[#DCE3E7] rounded p-2 text-[#16212B] focus:outline-none"
+                >
+                  <option value="UNDER_REVIEW">UNDER_REVIEW</option>
+                  <option value="ACTION_RECORDED">ACTION_RECORDED</option>
+                  <option value="RESOLVED">RESOLVED</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#5E6B75] mb-1">Action Recorded / Updated</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Supplementary simulation labs deployed"
+                  value={updateInterventionForm.actionTaken}
+                  onChange={e => setUpdateInterventionForm({ ...updateInterventionForm, actionTaken: e.target.value })}
+                  className="w-full bg-[#FAF9F5] border border-[#DCE3E7] rounded p-2 text-[#16212B] focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#5E6B75] mb-1">Follow-Up Date</label>
+                <input
+                  type="date"
+                  value={updateInterventionForm.followUpDate}
+                  onChange={e => setUpdateInterventionForm({ ...updateInterventionForm, followUpDate: e.target.value })}
+                  className="w-full bg-[#FAF9F5] border border-[#DCE3E7] rounded p-2 text-[#16212B] focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#5E6B75] mb-1">Observed Outcome Re-measurement Notes</label>
+                <textarea
+                  rows={3}
+                  placeholder="Outcome change observed after intervention (e.g. +14% score improvement observed in next assessment)..."
+                  value={updateInterventionForm.observedOutcomeNotes}
+                  onChange={e => setUpdateInterventionForm({ ...updateInterventionForm, observedOutcomeNotes: e.target.value })}
+                  className="w-full bg-[#FAF9F5] border border-[#DCE3E7] rounded p-2 text-[#16212B] focus:outline-none"
+                />
+              </div>
+
+              <div className="pt-3 flex items-center justify-end gap-2 border-t border-[#DCE3E7]">
+                <button
+                  type="button"
+                  onClick={() => setSelectedInterventionForUpdate(null)}
+                  className="px-3 py-1.5 text-[#5E6B75] hover:text-[#16212B] cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-[#087F8C] hover:bg-[#087F8C]/90 text-white rounded font-bold cursor-pointer"
+                >
+                  Update Record
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
-
-export default GovernmentDashboard;

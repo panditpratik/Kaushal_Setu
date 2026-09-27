@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { AppView, StakeholderRole, TraineeTab, ProviderTab } from '../types';
+import type { AppView, StakeholderRole, TraineeTab, ProviderTab, GovernmentTab } from '../types';
 import logoSvg from '../assets/logo.svg';
 import iconSvg from '../assets/icon.svg';
 import { ArrowRight, LogOut, ChevronDown, Bell, Check, Menu, X, ShieldCheck } from 'lucide-react';
@@ -12,9 +12,11 @@ interface HeaderProps {
   currentUser?: AuthUser | null;
   activeTraineeTab?: TraineeTab;
   activeProviderTab?: ProviderTab;
+  activeGovernmentTab?: GovernmentTab;
   onNavigate: (view: AppView, role?: StakeholderRole) => void;
   onSelectTraineeTab?: (tab: TraineeTab) => void;
   onSelectProviderTab?: (tab: ProviderTab) => void;
+  onSelectGovernmentTab?: (tab: GovernmentTab) => void;
   onLogout?: () => void;
 }
 
@@ -24,9 +26,11 @@ export const Header: React.FC<HeaderProps> = ({
   currentUser, 
   activeTraineeTab = 'overview',
   activeProviderTab = 'overview',
+  activeGovernmentTab = 'overview',
   onNavigate, 
   onSelectTraineeTab,
   onSelectProviderTab,
+  onSelectGovernmentTab,
   onLogout 
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -81,6 +85,7 @@ export const Header: React.FC<HeaderProps> = ({
   const unreadCount = notifications.filter(n => !n.read).length;
   const isTraineeContext = currentRole === 'trainee' || currentView === 'trainee-dashboard';
   const isProviderContext = currentRole === 'provider' || currentView === 'provider-dashboard';
+  const isGovernmentContext = currentRole === 'government' || currentView === 'government-dashboard' || currentUser?.role === 'GOVERNMENT';
 
   // Navigation Items for Trainee Portal (Overview, Training, Outcomes, Journey, Follow-ups, Skill Gaps)
   const traineeNavItems = [
@@ -220,6 +225,110 @@ export const Header: React.FC<HeaderProps> = ({
     },
   ];
 
+  // Navigation Items for Government Portal (Overview, Analytics, Programmes, Providers, Districts, Skill Gaps, Non-Placement, Attrition, Interventions, Follow-ups)
+  const governmentNavItems = [
+    {
+      id: 'overview',
+      label: 'Overview',
+      onClick: () => {
+        onNavigate('government-dashboard', 'government');
+        onSelectGovernmentTab?.('overview');
+        setMobileMenuOpen(false);
+      },
+      isActive: currentView === 'government-dashboard' && activeGovernmentTab === 'overview',
+    },
+    {
+      id: 'analytics',
+      label: 'Analytics',
+      onClick: () => {
+        onNavigate('government-dashboard', 'government');
+        onSelectGovernmentTab?.('analytics');
+        setMobileMenuOpen(false);
+      },
+      isActive: currentView === 'government-dashboard' && activeGovernmentTab === 'analytics',
+    },
+    {
+      id: 'programmes',
+      label: 'Programmes',
+      onClick: () => {
+        onNavigate('government-dashboard', 'government');
+        onSelectGovernmentTab?.('programmes');
+        setMobileMenuOpen(false);
+      },
+      isActive: currentView === 'government-dashboard' && activeGovernmentTab === 'programmes',
+    },
+    {
+      id: 'providers',
+      label: 'Providers',
+      onClick: () => {
+        onNavigate('government-dashboard', 'government');
+        onSelectGovernmentTab?.('providers');
+        setMobileMenuOpen(false);
+      },
+      isActive: currentView === 'government-dashboard' && activeGovernmentTab === 'providers',
+    },
+    {
+      id: 'districts',
+      label: 'Districts',
+      onClick: () => {
+        onNavigate('government-dashboard', 'government');
+        onSelectGovernmentTab?.('districts');
+        setMobileMenuOpen(false);
+      },
+      isActive: currentView === 'government-dashboard' && activeGovernmentTab === 'districts',
+    },
+    {
+      id: 'skills',
+      label: 'Skill Gaps',
+      onClick: () => {
+        onNavigate('government-dashboard', 'government');
+        onSelectGovernmentTab?.('skills');
+        setMobileMenuOpen(false);
+      },
+      isActive: currentView === 'government-dashboard' && activeGovernmentTab === 'skills',
+    },
+    {
+      id: 'non-placement',
+      label: 'Non-Placement',
+      onClick: () => {
+        onNavigate('government-dashboard', 'government');
+        onSelectGovernmentTab?.('non-placement');
+        setMobileMenuOpen(false);
+      },
+      isActive: currentView === 'government-dashboard' && activeGovernmentTab === 'non-placement',
+    },
+    {
+      id: 'attrition',
+      label: 'Attrition',
+      onClick: () => {
+        onNavigate('government-dashboard', 'government');
+        onSelectGovernmentTab?.('attrition');
+        setMobileMenuOpen(false);
+      },
+      isActive: currentView === 'government-dashboard' && activeGovernmentTab === 'attrition',
+    },
+    {
+      id: 'interventions',
+      label: 'Interventions',
+      onClick: () => {
+        onNavigate('government-dashboard', 'government');
+        onSelectGovernmentTab?.('interventions');
+        setMobileMenuOpen(false);
+      },
+      isActive: currentView === 'government-dashboard' && activeGovernmentTab === 'interventions',
+    },
+    {
+      id: 'follow-ups',
+      label: 'Follow-ups',
+      onClick: () => {
+        onNavigate('government-dashboard', 'government');
+        onSelectGovernmentTab?.('follow-ups');
+        setMobileMenuOpen(false);
+      },
+      isActive: currentView === 'government-dashboard' && activeGovernmentTab === 'follow-ups',
+    },
+  ];
+
   return (
     <header className="sticky top-0 z-50 w-full bg-[#FAF9F5]/95 backdrop-blur-md border-b border-[#D5CEAE] shadow-xs transition-all">
       <div className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 md:px-8 xl:px-12 h-[76px] sm:h-[84px] flex items-center justify-between gap-3">
@@ -285,6 +394,25 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             ))}
           </nav>
+        ) : isGovernmentContext ? (
+          <nav 
+            className="hidden lg:flex items-center gap-1 xl:gap-1.5 font-mono text-[11px] shrink-0"
+            aria-label="Government Horizontal Navigation"
+          >
+            {governmentNavItems.map((item) => (
+              <button
+                key={item.id}
+                onClick={item.onClick}
+                className={`px-2 py-1 rounded font-medium tracking-wide transition-all cursor-pointer whitespace-nowrap ${
+                  item.isActive
+                    ? 'bg-[#18324A] text-white shadow-xs font-semibold'
+                    : 'text-[#47617C] hover:text-[#0F253B] hover:bg-[#EDE8D5]'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
         ) : currentView === 'landing' ? (
           <nav 
             className="hidden xl:flex items-center gap-6 text-[12px] font-semibold uppercase tracking-wider text-[#47617C] shrink-0"
@@ -313,7 +441,6 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center gap-2 text-xs font-mono text-[#47617C] shrink-0">
             <span className="text-[#0F253B] font-bold uppercase tracking-wider truncate max-w-[130px] sm:max-w-none">
               {currentRole === 'employer' && 'EMPLOYER WORKSPACE · TATA'}
-              {currentRole === 'government' && 'SOVEREIGN INTELLIGENCE · NCVET'}
             </span>
             <span className="hidden sm:inline-block px-2 py-0.5 text-[10px] bg-[#D8EEDF] text-[#164627] font-semibold border border-[#B6DBC0] rounded">
               3P Verified ✓
@@ -502,7 +629,7 @@ export const Header: React.FC<HeaderProps> = ({
           )}
 
           {/* Mobile Hamburger Menu Button */}
-          {(isTraineeContext || isProviderContext) && (
+          {(isTraineeContext || isProviderContext || isGovernmentContext) && (
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="lg:hidden p-2 text-[#263B52] hover:bg-[#EDE8D5] rounded transition-colors cursor-pointer"
@@ -517,12 +644,16 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Mobile Drawer Navigation */}
-      {mobileMenuOpen && (isTraineeContext || isProviderContext) && (
+      {mobileMenuOpen && (isTraineeContext || isProviderContext || isGovernmentContext) && (
         <div className="lg:hidden bg-[#FAF7EE] border-b border-[#D5CEAE] px-4 py-3 space-y-1.5 font-mono text-xs animate-in slide-in-from-top-2 duration-150">
           <div className="text-[10px] uppercase font-bold text-[#52667A] px-2 py-1">
-            {isTraineeContext ? 'Trainee Portal Menu' : 'Training Provider Portal Menu'}
+            {isTraineeContext 
+              ? 'Trainee Portal Menu' 
+              : isProviderContext 
+                ? 'Training Provider Portal Menu' 
+                : 'Government Outcome Intelligence Menu'}
           </div>
-          {(isTraineeContext ? traineeNavItems : providerNavItems).map((item) => (
+          {(isTraineeContext ? traineeNavItems : isProviderContext ? providerNavItems : governmentNavItems).map((item) => (
             <button
               key={item.id}
               onClick={item.onClick}

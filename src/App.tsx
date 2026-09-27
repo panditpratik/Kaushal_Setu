@@ -1,6 +1,6 @@
 // src/App.tsx
 import { useState, useEffect, useCallback } from 'react';
-import type { AppView, StakeholderRole, TraineeTab, ProviderTab } from './types';
+import type { AppView, StakeholderRole, TraineeTab, ProviderTab, GovernmentTab } from './types';
 import { Header } from './components/Header';
 import { LandingPage } from './components/LandingPage';
 import { Footer } from './components/Footer';
@@ -65,6 +65,17 @@ export function App() {
     return 'overview';
   });
 
+  // Tab persistence for Government Portal (?gtab=overview | analytics | programmes | providers | districts | skills | non-placement | attrition | interventions | follow-ups)
+  const [governmentTab, setGovernmentTab] = useState<GovernmentTab>(() => {
+    if (typeof window === 'undefined') return 'overview';
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('gtab') as GovernmentTab | null;
+    if (tab && ['overview', 'analytics', 'programmes', 'providers', 'districts', 'skills', 'non-placement', 'attrition', 'interventions', 'follow-ups'].includes(tab)) {
+      return tab;
+    }
+    return 'overview';
+  });
+
   const syncViewToUrl = useCallback((view: AppView) => {
     const url = new URL(window.location.href);
     if (view === 'auth-callback') {
@@ -114,6 +125,11 @@ export function App() {
         setProviderTab(ptabParam);
       }
 
+      const gtabParam = params.get('gtab') as GovernmentTab | null;
+      if (gtabParam && ['overview', 'analytics', 'programmes', 'providers', 'districts', 'skills', 'non-placement', 'attrition', 'interventions', 'follow-ups'].includes(gtabParam)) {
+        setGovernmentTab(gtabParam);
+      }
+
       const viewParam = params.get('view') as AppView | null;
       if (viewParam && [
         'landing', 
@@ -156,6 +172,18 @@ export function App() {
     const url = new URL(window.location.href);
     url.searchParams.set('ptab', tab);
     window.history.pushState({ ptab: tab }, '', url.toString());
+  }, [currentView, syncViewToUrl]);
+
+  const handleSelectGovernmentTab = useCallback((tab: GovernmentTab) => {
+    setGovernmentTab(tab);
+    if (currentView !== 'government-dashboard') {
+      setCurrentView('government-dashboard');
+      setCurrentRole('government');
+      syncViewToUrl('government-dashboard');
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.set('gtab', tab);
+    window.history.pushState({ gtab: tab }, '', url.toString());
   }, [currentView, syncViewToUrl]);
 
   // Sync state when Supabase user profile loads or changes
@@ -304,9 +332,11 @@ export function App() {
           currentUser={currentUser}
           activeTraineeTab={traineeTab}
           activeProviderTab={providerTab}
+          activeGovernmentTab={governmentTab}
           onNavigate={handleNavigate} 
           onSelectTraineeTab={handleSelectTraineeTab}
           onSelectProviderTab={handleSelectProviderTab}
+          onSelectGovernmentTab={handleSelectGovernmentTab}
           onLogout={handleLogout}
         />
       )}
@@ -348,6 +378,8 @@ export function App() {
           <GovernmentDashboard 
             onNavigateHome={() => handleNavigate('landing')} 
             onSwitchRole={handleSwitchRole} 
+            activeTab={governmentTab}
+            onTabChange={handleSelectGovernmentTab}
           />
         ) : (
           <LandingPage onNavigate={handleNavigate} />

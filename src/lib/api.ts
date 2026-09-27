@@ -290,6 +290,160 @@ export interface ProviderOutcomeIntelligence {
   };
 }
 
+export interface GovernmentOutcomeIntelligence {
+  meta: {
+    calculatedAt: string;
+    timeRange: string;
+    districtFilter?: string | null;
+    programmeFilter?: string | null;
+    providerFilter?: string | null;
+    dataSource: string;
+  };
+  kpis: {
+    totalTrainees: number;
+    trainingCompleted: number;
+    completionRate: number | null;
+    certified: number;
+    certificationRate: number | null;
+    employed: number;
+    employmentRate: number | null;
+    wageEmployed: number;
+    selfEmployed: number;
+    apprenticeship: number;
+    notEmployed: number;
+    nonPlacementRate: number;
+    retention6m: {
+      hasSufficientData: boolean;
+      rate: number | null;
+      eligibleCount: number;
+      retainedCount: number;
+      label: string;
+    };
+    salaryProgression: {
+      hasSufficientData: boolean;
+      eligibleCount: number;
+      averageBaselineSalary: number;
+      averageCurrentSalary: number;
+      averageAbsoluteChange: number;
+      averagePercentChange: number;
+      label: string;
+    };
+    skillGapsCount: number;
+    followUps: {
+      assigned: number;
+      completed: number;
+      pending: number;
+      overdue: number;
+      completionRate: number | null;
+    };
+    attrition: {
+      hasSufficientData: boolean;
+      enrolled: number;
+      completed: number;
+      dropped: number;
+      dropoutRate: number | null;
+      label: string;
+    };
+  };
+  funnel: {
+    trained: number;
+    completed: number;
+    certified: number;
+    employed: number;
+    retained: number | null;
+    hasRetentionData: boolean;
+    hasSalaryData: boolean;
+    salaryLiftPct: number | null;
+  };
+  districts: {
+    district: string;
+    trainees: number;
+    completed: number;
+    completionRate: number | null;
+    certified: number;
+    certificationRate: number | null;
+    employed: number;
+    employmentRate: number | null;
+    nonPlacement: number;
+    skillGaps: number;
+    hasRetentionData: boolean;
+    retentionRate: number | null;
+  }[];
+  programmes: {
+    courseId: string;
+    courseTitle: string;
+    sector: string;
+    providerName: string;
+    trainees: number;
+    completed: number;
+    completionRate: number | null;
+    certified: number;
+    certificationRate: number | null;
+    employed: number;
+    employmentRate: number | null;
+    nonPlacement: number;
+    skillGaps: number;
+    hasRetentionData: boolean;
+    retentionRate: number | null;
+  }[];
+  providers: {
+    providerId: string;
+    providerName: string;
+    accreditationId: string;
+    district: string;
+    trainees: number;
+    completed: number;
+    completionRate: number | null;
+    certified: number;
+    certificationRate: number | null;
+    employed: number;
+    employmentRate: number | null;
+    nonPlacement: number;
+    skillGaps: number;
+    hasRetentionData: boolean;
+    retentionRate: number | null;
+  }[];
+  outcomeTrends: {
+    period: string;
+    enrolled: number;
+    completed: number;
+    certified: number;
+    employed: number;
+    notEmployed: number;
+  }[];
+  skillGaps: {
+    skillName: string;
+    affectedTraineesCount: number;
+    averageScore: number;
+    benchmarkScore: number;
+    gap: number;
+    severity: string;
+    programme: string;
+    district: string;
+  }[];
+  nonPlacement: {
+    totalNotEmployed: number;
+    reasons: {
+      reason: string;
+      count: number;
+      percentage: number;
+    }[];
+  };
+  interventions: {
+    id: string;
+    targetType: string;
+    targetId?: string | null;
+    targetName: string;
+    issueType: string;
+    description: string;
+    status: string;
+    actionTaken?: string | null;
+    followUpDate?: string | null;
+    observedOutcomeNotes?: string | null;
+    createdAt: string;
+  }[];
+}
+
 export interface GovernmentAnalytics {
   meta: {
     calculatedAt: string;
@@ -848,7 +1002,81 @@ export const providerService = {
 };
 
 export const governmentService = {
-  // Read operation via PostgreSQL RPC function: get_government_analytics
+  // Primary Phase 3 Government Outcome Intelligence RPC
+  getOutcomeIntelligence: async (
+    filters: { timeRange?: string; district?: string; programme?: string; provider?: string } = {}
+  ): Promise<GovernmentOutcomeIntelligence> => {
+    const timeRange = filters.timeRange || 'all';
+    const district = !filters.district || filters.district === 'All' ? null : filters.district;
+    const programme = !filters.programme || filters.programme === 'All' ? null : filters.programme;
+    const provider = !filters.provider || filters.provider === 'All' ? null : filters.provider;
+
+    const { data, error } = await supabase.rpc('get_government_outcome_intelligence', {
+      p_time_range: timeRange,
+      p_district: district,
+      p_programme: programme,
+      p_provider: provider,
+    });
+
+    if (error) {
+      handleSupabaseError(error, 'Failed to load government outcome intelligence');
+    }
+
+    return data as GovernmentOutcomeIntelligence;
+  },
+
+  // Record a data-driven intervention area into PostgreSQL
+  recordIntervention: async (payload: {
+    targetType: string;
+    targetId?: string;
+    targetName: string;
+    issueType: string;
+    description: string;
+    actionTaken?: string;
+    followUpDate?: string;
+  }): Promise<{ success: boolean; id: string }> => {
+    const { data, error } = await supabase.rpc('record_government_intervention', {
+      p_target_type: payload.targetType,
+      p_target_id: payload.targetId || null,
+      p_target_name: payload.targetName,
+      p_issue_type: payload.issueType,
+      p_description: payload.description,
+      p_action_taken: payload.actionTaken || null,
+      p_follow_up_date: payload.followUpDate || null,
+    });
+
+    if (error) {
+      handleSupabaseError(error, 'Failed to record government intervention');
+    }
+
+    const id = (typeof data === 'object' && data !== null && 'id' in data) ? (data as any).id : String(data);
+    return { success: true, id };
+  },
+
+  // Update existing intervention status / action / observed outcome
+  updateIntervention: async (payload: {
+    id: string;
+    status: string;
+    actionTaken?: string;
+    followUpDate?: string;
+    observedOutcomeNotes?: string;
+  }): Promise<{ success: boolean }> => {
+    const { error } = await supabase.rpc('update_government_intervention', {
+      p_id: payload.id,
+      p_status: payload.status,
+      p_action_taken: payload.actionTaken || null,
+      p_follow_up_date: payload.followUpDate || null,
+      p_observed_outcome_notes: payload.observedOutcomeNotes || null,
+    });
+
+    if (error) {
+      handleSupabaseError(error, 'Failed to update government intervention');
+    }
+
+    return { success: true };
+  },
+
+  // Legacy Government Analytics RPC
   getAnalytics: async (
     filters: { district?: string; programme?: string; provider?: string; outcome?: string } = {}
   ): Promise<GovernmentAnalytics> => {
@@ -879,6 +1107,8 @@ export const governmentService = {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'employment_records' }, () => onUpdate())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'follow_ups' }, () => onUpdate())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'trainees' }, () => onUpdate())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cohort_enrollments' }, () => onUpdate())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'government_interventions' }, () => onUpdate())
       .subscribe();
 
     return () => {
