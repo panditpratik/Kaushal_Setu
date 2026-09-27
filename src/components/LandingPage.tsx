@@ -1,5 +1,6 @@
 import React from 'react';
 import type { AppView, StakeholderRole } from '../types';
+import { useAuth } from '../context/AuthContext';
 import { useTraineeDossier } from '../hooks/useTraineeDossier';
 import { useOutcomesSummary } from '../hooks/useOutcomesSummary';
 import { TrajectoryArcCard } from './TrajectoryArcCard';
@@ -25,7 +26,8 @@ interface LandingPageProps {
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
-  const { data: featuredDossier, loading: featuredLoading, error: featuredError } = useTraineeDossier(FEATURED_TRAINEE_ID);
+  const { user } = useAuth();
+  const { data: featuredDossier, loading: featuredLoading, error: featuredError } = useTraineeDossier(user ? FEATURED_TRAINEE_ID : '');
   const { data: outcomes, loading: outcomesLoading } = useOutcomesSummary();
 
   const totalTraineesDisplay = outcomes?.totalTrainees != null ? outcomes.totalTrainees.toLocaleString() : (outcomesLoading ? '...' : '0');

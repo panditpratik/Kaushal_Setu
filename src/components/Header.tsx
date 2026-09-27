@@ -313,15 +313,17 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
 
                   <div className="py-1">
-                    <button
-                      onClick={() => onNavigate('trainee-dashboard', 'trainee')}
-                      className={`w-full text-left px-3.5 py-2 flex items-center justify-between transition-colors cursor-pointer ${
-                        currentRole === 'trainee' ? 'bg-[#EDE8D5] text-[#0F253B] font-bold' : 'hover:bg-[#FAF7EE] text-[#47617C]'
-                      }`}
-                    >
-                      <span>Trainee View</span>
-                      {currentRole === 'trainee' && <span className="text-[10px] text-emerald-700 font-bold">Active</span>}
-                    </button>
+                    {currentUser.role === 'TRAINEE' && (
+                      <button
+                        onClick={() => onNavigate('trainee-dashboard', 'trainee')}
+                        className={`w-full text-left px-3.5 py-2 flex items-center justify-between transition-colors cursor-pointer ${
+                          currentRole === 'trainee' ? 'bg-[#EDE8D5] text-[#0F253B] font-bold' : 'hover:bg-[#FAF7EE] text-[#47617C]'
+                        }`}
+                      >
+                        <span>Trainee View</span>
+                        {currentRole === 'trainee' && <span className="text-[10px] text-emerald-700 font-bold">Active</span>}
+                      </button>
+                    )}
 
                     {/* Only show other views if user has appropriate authorization */}
                     {currentUser.role === 'EMPLOYER' && (

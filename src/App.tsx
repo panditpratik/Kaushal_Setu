@@ -13,8 +13,16 @@ import { useAuth } from './context/AuthContext';
 import type { AuthUser } from './lib/api';
 
 export function App() {
-  const { user, profile, stakeholderRole, defaultView, signOut } = useAuth();
-  const [currentView, setCurrentView] = useState<AppView>('landing');
+  const { user, profile, stakeholderRole, defaultView, loading, signOut } = useAuth();
+  const [currentView, setCurrentView] = useState<AppView>(() => {
+    if (typeof window === 'undefined') return 'landing';
+    const params = new URLSearchParams(window.location.search);
+    const v = params.get('view') as AppView | null;
+    if (v && ['landing', 'login', 'trainee-dashboard', 'employer-dashboard', 'provider-dashboard', 'government-dashboard'].includes(v)) {
+      return v;
+    }
+    return 'landing';
+  });
   const [currentRole, setCurrentRole] = useState<StakeholderRole | null>(null);
 
   // Tab persistence for Trainee Portal (?tab=trajectory | ?tab=skills | ?tab=ledger)
@@ -26,15 +34,29 @@ export function App() {
     return 'trajectory';
   });
 
+  const syncViewToUrl = useCallback((view: AppView) => {
+    const url = new URL(window.location.href);
+    if (view === 'landing') {
+      url.searchParams.delete('view');
+    } else {
+      url.searchParams.set('view', view);
+    }
+    window.history.pushState({ view }, '', url.toString());
+  }, []);
+
   // Popstate listener for browser back/forward buttons
   useEffect(() => {
     const handlePopState = () => {
       const params = new URLSearchParams(window.location.search);
       const tab = params.get('tab');
-      if (tab === 'skills' || tab === 'ledger') {
+      if (tab === 'skills' || tab === 'ledger' || tab === 'trajectory') {
         setTraineeTab(tab);
-      } else if (tab === 'trajectory') {
-        setTraineeTab('trajectory');
+      }
+      const viewParam = params.get('view') as AppView | null;
+      if (viewParam && ['landing', 'login', 'trainee-dashboard', 'employer-dashboard', 'provider-dashboard', 'government-dashboard'].includes(viewParam)) {
+        setCurrentView(viewParam);
+      } else {
+        setCurrentView('landing');
       }
     };
     window.addEventListener('popstate', handlePopState);
@@ -46,24 +68,40 @@ export function App() {
     if (currentView !== 'trainee-dashboard') {
       setCurrentView('trainee-dashboard');
       setCurrentRole('trainee');
+      syncViewToUrl('trainee-dashboard');
     }
     const url = new URL(window.location.href);
     url.searchParams.set('tab', tab);
     window.history.pushState({ tab }, '', url.toString());
-  }, [currentView]);
+  }, [currentView, syncViewToUrl]);
 
   // Sync state when Supabase user profile loads or changes
   useEffect(() => {
+    if (loading) return;
+
     if (profile && stakeholderRole) {
       setCurrentRole(stakeholderRole);
-      // Auto-navigate to user's dashboard if currently on login or landing
-      if (currentView === 'login' || currentView === 'landing') {
+      // Auto-navigate to user's dashboard if currently on login or landing (with no explicit ?view set)
+      const params = new URLSearchParams(window.location.search);
+      const viewInUrl = params.get('view');
+      if (!viewInUrl || currentView === 'login') {
         setCurrentView(defaultView);
+        syncViewToUrl(defaultView);
       }
     } else if (!user) {
       setCurrentRole(null);
+      const isProtectedDashboard = [
+        'trainee-dashboard',
+        'employer-dashboard',
+        'provider-dashboard',
+        'government-dashboard',
+      ].includes(currentView);
+      if (isProtectedDashboard) {
+        setCurrentView('login');
+        syncViewToUrl('login');
+      }
     }
-  }, [profile, stakeholderRole, defaultView, user]);
+  }, [loading, profile, stakeholderRole, defaultView, user, currentView, syncViewToUrl]);
 
   const currentUser: AuthUser | null = profile
     ? {
@@ -89,6 +127,7 @@ export function App() {
 
     if (isProtectedDashboard && !user) {
       setCurrentView('login');
+      syncViewToUrl('login');
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
@@ -114,6 +153,7 @@ export function App() {
     }
 
     setCurrentView(view);
+    syncViewToUrl(view);
     if (role) {
       setCurrentRole(role);
     } else if (view === 'trainee-dashboard') {
@@ -133,6 +173,7 @@ export function App() {
   const handleLogin = (role: StakeholderRole, targetView: AppView) => {
     setCurrentRole(role);
     setCurrentView(targetView);
+    syncViewToUrl(targetView);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -140,18 +181,36 @@ export function App() {
     await signOut();
     setCurrentRole(null);
     setCurrentView('landing');
+    syncViewToUrl('landing');
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [signOut]);
+  }, [signOut, syncViewToUrl]);
 
   const handleSwitchRole = (roleStr: string) => {
     const role = roleStr as StakeholderRole;
     setCurrentRole(role);
-    if (role === 'trainee') setCurrentView('trainee-dashboard');
-    else if (role === 'employer') setCurrentView('employer-dashboard');
-    else if (role === 'provider') setCurrentView('provider-dashboard');
-    else if (role === 'government') setCurrentView('government-dashboard');
+    let target: AppView = 'landing';
+    if (role === 'trainee') target = 'trainee-dashboard';
+    else if (role === 'employer') target = 'employer-dashboard';
+    else if (role === 'provider') target = 'provider-dashboard';
+    else if (role === 'government') target = 'government-dashboard';
+    setCurrentView(target);
+    syncViewToUrl(target);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#F4F4E7] flex flex-col items-center justify-center font-sans text-[#0F253B]">
+        <div className="w-12 h-12 border-4 border-[#263B52] border-t-transparent rounded-full animate-spin mb-4" />
+        <div className="text-xs font-mono font-bold tracking-widest text-[#263B52] uppercase">
+          Establishing Secure Institutional Session...
+        </div>
+        <div className="text-[11px] font-mono text-[#52667A] mt-1">
+          Supabase Cloud Auth • NCVET Telemetry Node
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F4F4E7] text-[#0F253B] font-sans flex flex-col selection:bg-[#263B52] selection:text-white">
