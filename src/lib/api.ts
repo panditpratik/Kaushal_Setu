@@ -150,6 +150,146 @@ export interface TraineeDossier {
   }[];
 }
 
+export interface ProviderOutcomeIntelligence {
+  success: boolean;
+  provider: {
+    id: string;
+    name: string;
+    accreditationId: string;
+    createdAt: string;
+  };
+  timeRange: string;
+  kpis: {
+    totalTrainees: number;
+    trainingCompleted: number;
+    completionRate: number | null;
+    certified: number;
+    certificationRate: number | null;
+    employed: number;
+    employmentRate: number | null;
+    wageEmployed: number;
+    selfEmployed: number;
+    apprenticeship: number;
+    notEmployed: number;
+    nonPlacementRate: number;
+    retention6m: {
+      hasSufficientData: boolean;
+      rate: number | null;
+      eligibleCount: number;
+      retainedCount: number;
+      label: string;
+    };
+    skillGapsCount: number;
+  };
+  programmes: {
+    id: string;
+    name: string;
+    courseTitle: string;
+    sector: string;
+    startDate: string;
+    endDate: string | null;
+    status: 'ACTIVE' | 'COMPLETED';
+    enrolled: number;
+    completed: number;
+    completionRate: number | null;
+    certified: number;
+    certificationRate: number | null;
+    employed: number;
+    employmentRate: number | null;
+    selfEmployed: number;
+    apprenticeship: number;
+    notEmployed: number;
+    skillGapsCount: number;
+    funnel: {
+      enrolled: number;
+      completed: number;
+      certified: number;
+      employed: number;
+      retained: number;
+      hasRetentionData: boolean;
+    };
+  }[];
+  trainees: {
+    id: string;
+    name: string;
+    cohortId: string;
+    cohortName: string;
+    programme: string;
+    enrolledAt: string;
+    trainingStatus: string;
+    isCertified: boolean;
+    certificateNumber?: string | null;
+    certifiedAt?: string | null;
+    employmentStatus: string;
+    jobTitle?: string | null;
+    employerName?: string | null;
+    monthlySalary?: number | null;
+    unemploymentReason?: string | null;
+    unemploymentNotes?: string | null;
+    district?: string | null;
+    state?: string | null;
+    hasSkillGap: boolean;
+    skillGapCount: number;
+    followUpStatus: string;
+  }[];
+  trainingRecords: {
+    enrollmentId: string;
+    traineeId: string;
+    traineeName: string;
+    cohortId: string;
+    cohortName: string;
+    courseTitle: string;
+    sector: string;
+    enrolledAt: string;
+    startDate: string;
+    endDate?: string | null;
+    status: string;
+    isCompleted: boolean;
+    isCertified: boolean;
+    certificateNumber?: string | null;
+  }[];
+  skillGaps: {
+    skillName: string;
+    affectedTraineesCount: number;
+    averageScore: number;
+    benchmarkScore: number;
+    gap: number;
+    severity: string;
+    recommendedIntervention: string;
+  }[];
+  nonPlacement: {
+    totalNonEmployed: number;
+    reasonsBreakdown: {
+      reason: string;
+      count: number;
+      percentage: number;
+    }[];
+    trainees: {
+      id: string;
+      name: string;
+      programme: string;
+      district?: string | null;
+      reason: string;
+      notes?: string | null;
+    }[];
+  };
+  salaryProgression: {
+    hasSufficientData: boolean;
+    eligibleTraineeCount: number;
+    averageBaselineSalary: number;
+    averageCurrentSalary: number;
+    averageAbsoluteChange: number;
+    averagePercentChange: number;
+    label: string;
+  };
+  followUps: {
+    assigned: number;
+    completed: number;
+    pending: number;
+    completionRate: number | null;
+  };
+}
+
 export interface GovernmentAnalytics {
   meta: {
     calculatedAt: string;
@@ -665,6 +805,29 @@ export const providerService = {
     });
     if (error) handleSupabaseError(error, 'Failed to load provider analytics');
     return data;
+  },
+
+  // Real Database-Backed Provider Outcome Intelligence RPC
+  getOutcomeIntelligence: async (
+    providerId?: string,
+    timeRange: string = 'all'
+  ): Promise<ProviderOutcomeIntelligence> => {
+    const providerParam = providerId || 'default';
+    const { data, error } = await supabase.rpc('get_provider_outcome_intelligence', {
+      p_provider_id: providerParam,
+      p_time_range: timeRange,
+    });
+    if (error) handleSupabaseError(error, 'Failed to load provider outcome intelligence from PostgreSQL');
+    return data as ProviderOutcomeIntelligence;
+  },
+
+  // Real Trainee Detail inspection for authorized provider
+  getTraineeDetail: async (traineeId: string): Promise<TraineeDossier> => {
+    const { data, error } = await supabase.rpc('get_provider_trainee_detail', {
+      p_trainee_id: traineeId,
+    });
+    if (error) handleSupabaseError(error, 'Failed to load authorized trainee detail from PostgreSQL');
+    return data as TraineeDossier;
   },
 
   // Write operation via Supabase Edge Function: deploy-intervention

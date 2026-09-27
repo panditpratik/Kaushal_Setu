@@ -1,6 +1,6 @@
 // src/App.tsx
 import { useState, useEffect, useCallback } from 'react';
-import type { AppView, StakeholderRole, TraineeTab } from './types';
+import type { AppView, StakeholderRole, TraineeTab, ProviderTab } from './types';
 import { Header } from './components/Header';
 import { LandingPage } from './components/LandingPage';
 import { Footer } from './components/Footer';
@@ -54,6 +54,17 @@ export function App() {
     return 'overview';
   });
 
+  // Tab persistence for Training Provider Portal (?ptab=overview | programmes | trainees | training-records | outcomes | skills | non-placement)
+  const [providerTab, setProviderTab] = useState<ProviderTab>(() => {
+    if (typeof window === 'undefined') return 'overview';
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('ptab') as ProviderTab | null;
+    if (tab && ['overview', 'programmes', 'trainees', 'training-records', 'outcomes', 'skills', 'non-placement'].includes(tab)) {
+      return tab;
+    }
+    return 'overview';
+  });
+
   const syncViewToUrl = useCallback((view: AppView) => {
     const url = new URL(window.location.href);
     if (view === 'auth-callback') {
@@ -97,6 +108,12 @@ export function App() {
       } else if ((tabParam as any) === 'ledger') {
         setTraineeTab('followups');
       }
+
+      const ptabParam = params.get('ptab') as ProviderTab | null;
+      if (ptabParam && ['overview', 'programmes', 'trainees', 'training-records', 'outcomes', 'skills', 'non-placement'].includes(ptabParam)) {
+        setProviderTab(ptabParam);
+      }
+
       const viewParam = params.get('view') as AppView | null;
       if (viewParam && [
         'landing', 
@@ -127,6 +144,18 @@ export function App() {
     const url = new URL(window.location.href);
     url.searchParams.set('tab', tab);
     window.history.pushState({ tab }, '', url.toString());
+  }, [currentView, syncViewToUrl]);
+
+  const handleSelectProviderTab = useCallback((tab: ProviderTab) => {
+    setProviderTab(tab);
+    if (currentView !== 'provider-dashboard') {
+      setCurrentView('provider-dashboard');
+      setCurrentRole('provider');
+      syncViewToUrl('provider-dashboard');
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.set('ptab', tab);
+    window.history.pushState({ ptab: tab }, '', url.toString());
   }, [currentView, syncViewToUrl]);
 
   // Sync state when Supabase user profile loads or changes
@@ -274,8 +303,10 @@ export function App() {
           currentRole={currentRole} 
           currentUser={currentUser}
           activeTraineeTab={traineeTab}
+          activeProviderTab={providerTab}
           onNavigate={handleNavigate} 
           onSelectTraineeTab={handleSelectTraineeTab}
+          onSelectProviderTab={handleSelectProviderTab}
           onLogout={handleLogout}
         />
       )}
@@ -310,6 +341,8 @@ export function App() {
           <ProviderDashboard 
             onNavigateHome={() => handleNavigate('landing')} 
             onSwitchRole={handleSwitchRole} 
+            activeTab={providerTab}
+            onTabChange={handleSelectProviderTab}
           />
         ) : currentView === 'government-dashboard' ? (
           <GovernmentDashboard 

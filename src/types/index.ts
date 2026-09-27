@@ -2,6 +2,8 @@ export type StakeholderRole = 'trainee' | 'employer' | 'provider' | 'government'
 
 export type TraineeTab = 'overview' | 'training' | 'outcomes' | 'journey' | 'followups' | 'skills';
 
+export type ProviderTab = 'overview' | 'programmes' | 'trainees' | 'training-records' | 'outcomes' | 'skills' | 'non-placement';
+
 export type AppView = 
   | 'landing' 
   | 'login' 
