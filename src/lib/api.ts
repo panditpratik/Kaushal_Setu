@@ -132,6 +132,36 @@ export interface GovernmentAnalytics {
       percentWithIncrease: number;
     };
   };
+  impactMatrix?: {
+    trainingOutcome: {
+      enrolled: number;
+      completed: number;
+      certified: number;
+      completionRate: number;
+      certificationRate: number;
+    };
+    employmentOutcome: {
+      employed: number;
+      selfEmployed: number;
+      apprentices: number;
+      unemployed: number;
+      totalAssessed: number;
+    };
+    retentionOutcome: {
+      sixMonths: {
+        eligible: number;
+        stillEmployed: number;
+        leftJob: number;
+        retentionRate: number;
+      };
+      twelveMonths: {
+        eligible: number;
+        stillEmployed: number;
+        changedJobs: number;
+        retentionRate: number;
+      };
+    };
+  };
   outcomeDistribution: {
     type: string;
     count: number;
