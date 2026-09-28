@@ -13,6 +13,7 @@ export type GovernmentTab =
   | 'skills' 
   | 'non-placement' 
   | 'attrition' 
+  | 'data-quality'
   | 'interventions' 
   | 'follow-ups';
 

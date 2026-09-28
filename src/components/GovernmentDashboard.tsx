@@ -22,7 +22,9 @@ import {
   ChevronRight,
   ArrowUpRight,
   AlertCircle,
-  BookOpen
+  BookOpen,
+  Database,
+  BarChart3
 } from 'lucide-react';
 
 interface GovernmentDashboardProps {
@@ -43,6 +45,7 @@ export function GovernmentDashboard({
   const [selectedDistrict, setSelectedDistrict] = useState<string>('All');
   const [selectedProgramme, setSelectedProgramme] = useState<string>('All');
   const [selectedProvider, setSelectedProvider] = useState<string>('All');
+  const [selectedDataQuality, setSelectedDataQuality] = useState<string>('all');
 
   // Skill Gap Tab Specific Filter
   const [skillSort, setSkillSort] = useState<'affected' | 'gap' | 'severity'>('affected');
@@ -87,6 +90,7 @@ export function GovernmentDashboard({
         district: selectedDistrict,
         programme: selectedProgramme,
         provider: selectedProvider,
+        dataQuality: selectedDataQuality,
       });
       setIntelligence(data);
       setLastSync(new Date().toLocaleTimeString());
@@ -100,7 +104,7 @@ export function GovernmentDashboard({
     } finally {
       setLoading(false);
     }
-  }, [timeRange, selectedDistrict, selectedProgramme, selectedProvider]);
+  }, [timeRange, selectedDistrict, selectedProgramme, selectedProvider, selectedDataQuality]);
 
   // Initial & Filter Change Load
   useEffect(() => {
@@ -366,14 +370,29 @@ export function GovernmentDashboard({
               </select>
             </div>
 
+            {/* Data Quality Filter (Section 18) */}
+            <div className="flex items-center gap-1">
+              <span className="text-[11px] font-mono text-[#5E6B75] hidden lg:inline">Data Coverage:</span>
+              <select
+                value={selectedDataQuality}
+                onChange={e => setSelectedDataQuality(e.target.value)}
+                className="text-xs font-mono bg-[#FAF9F5] border border-[#DCE3E7] rounded px-2.5 py-1 text-[#16212B] focus:border-[#087F8C] focus:outline-none"
+              >
+                <option value="all">All Telemetry</option>
+                <option value="complete">Complete Outcome Data</option>
+                <option value="incomplete">Incomplete Outcome Data</option>
+              </select>
+            </div>
+
             {/* Clear Filters */}
-            {(selectedDistrict !== 'All' || selectedProgramme !== 'All' || selectedProvider !== 'All' || timeRange !== 'all') && (
+            {(selectedDistrict !== 'All' || selectedProgramme !== 'All' || selectedProvider !== 'All' || timeRange !== 'all' || selectedDataQuality !== 'all') && (
               <button
                 onClick={() => {
                   setTimeRange('all');
                   setSelectedDistrict('All');
                   setSelectedProgramme('All');
                   setSelectedProvider('All');
+                  setSelectedDataQuality('all');
                 }}
                 className="text-[11px] font-mono text-[#E6A23C] hover:underline cursor-pointer"
               >
@@ -656,6 +675,94 @@ export function GovernmentDashboard({
                     </div>
 
                   </div>
+                </div>
+
+                {/* SECTION 14 & 15: OUTCOME DATA QUALITY & COMPLETENESS (SOVEREIGN COVERAGE AUDIT) */}
+                <div className="bg-white border border-[#DCE3E7] rounded-lg p-6">
+                  <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#DCE3E7] pb-4 mb-4">
+                    <div>
+                      <h2 className="text-base font-bold text-[#18324A] flex items-center gap-2">
+                        <Database className="w-4 h-4 text-[#087F8C]" />
+                        Outcome Data Quality & Coverage Telemetry
+                      </h2>
+                      <p className="text-xs text-[#5E6B75] mt-0.5">
+                        PostgreSQL ledger audit distinguishing telemetry availability from verified achievement rates.
+                      </p>
+                    </div>
+                    <div className="text-xs font-mono text-[#18324A] bg-[#E8F1F7] px-3 py-1.5 rounded border border-[#B8D5E5]">
+                      <strong>Statutory Distiction (Section 15):</strong> Data Coverage ≠ Outcome Rate.
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="p-4 rounded bg-[#FAF9F5] border border-[#DCE3E7]">
+                      <div className="text-xs font-mono text-[#5E6B75] uppercase">Employment Coverage</div>
+                      <div className="text-2xl font-serif font-bold text-[#18324A] mt-1">
+                        {intelligence.dataQuality?.employmentOutcomeCoverage ?? 0}%
+                      </div>
+                      <div className="text-[10px] font-mono text-[#5E6B75] mt-1">Candidates with documented outcome</div>
+                    </div>
+
+                    <div className="p-4 rounded bg-[#FAF9F5] border border-[#DCE3E7]">
+                      <div className="text-xs font-mono text-[#5E6B75] uppercase">Certification Coverage</div>
+                      <div className="text-2xl font-serif font-bold text-[#18324A] mt-1">
+                        {intelligence.dataQuality?.certificationCoverage ?? 0}%
+                      </div>
+                      <div className="text-[10px] font-mono text-[#5E6B75] mt-1">Issued assessment certificates in ledger</div>
+                    </div>
+
+                    <div className="p-4 rounded bg-[#FAF9F5] border border-[#DCE3E7]">
+                      <div className="text-xs font-mono text-[#5E6B75] uppercase">Follow-Up Coverage</div>
+                      <div className="text-2xl font-serif font-bold text-[#18324A] mt-1">
+                        {intelligence.dataQuality?.followUpCoverage ?? 0}%
+                      </div>
+                      <div className="text-[10px] font-mono text-[#5E6B75] mt-1">Completed longitudinal verification surveys</div>
+                    </div>
+
+                    <div className="p-4 rounded bg-[#FAF9F5] border border-[#DCE3E7]">
+                      <div className="text-xs font-mono text-[#5E6B75] uppercase">Salary History Documentation</div>
+                      <div className="text-2xl font-serif font-bold text-[#18324A] mt-1">
+                        {intelligence.dataQuality?.salaryHistoryCoverage ?? 0}%
+                      </div>
+                      <div className="text-[10px] font-mono text-[#5E6B75] mt-1">Verified pre & post-placement wage records</div>
+                    </div>
+                  </div>
+
+                  {/* Comparative distinction box */}
+                  <div className="mt-4 p-3 bg-[#FAF7EE] border border-[#DCE3E7] rounded text-xs font-mono">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <span className="font-bold text-[#18324A]">Outcome Data Coverage: {intelligence.dataQuality?.employmentOutcomeCoverage ?? 0}%</span>
+                        <p className="text-[11px] text-[#5E6B75] mt-0.5">
+                          Reflects telemetry completeness. {intelligence.dataQuality?.employmentOutcomeCoverage ?? 0}% of eligible candidates have recorded post-training status in PostgreSQL.
+                        </p>
+                      </div>
+                      <div>
+                        <span className="font-bold text-[#164627]">Employment Outcome Rate: {intelligence.kpis.employmentRate ?? 0}%</span>
+                        <p className="text-[11px] text-[#5E6B75] mt-0.5">
+                          Reflects verified programmatic placement. {intelligence.kpis.employmentRate ?? 0}% of eligible candidates achieved authenticated wage, self, or apprenticeship.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Data Quality Signals */}
+                  {intelligence.dataQuality?.signals && intelligence.dataQuality.signals.filter(Boolean).length > 0 && (
+                    <div className="mt-4 p-3 bg-amber-50/70 border border-amber-200 rounded">
+                      <div className="text-xs font-mono font-bold text-amber-900 mb-1 flex items-center gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-700" />
+                        <span>Active Telemetry Data Quality Signals:</span>
+                      </div>
+                      <ul className="space-y-1 text-xs font-mono text-amber-800">
+                        {intelligence.dataQuality.signals.filter(Boolean).map((sig, idx) => (
+                          <li key={idx} className="flex items-start gap-1.5">
+                            <span className="text-amber-500">•</span>
+                            <span>{sig}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
 
                 {/* Section 22: Areas Requiring Review (Closed-Loop Callout) */}
@@ -1194,7 +1301,10 @@ export function GovernmentDashboard({
             {activeTab === 'attrition' && (
               <div className="space-y-6">
                 <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
-                  <h2 className="text-lg font-bold text-[#18324A]">Cohort Attrition & Retention Observations</h2>
+                  <h2 className="text-lg font-bold text-[#18324A] flex items-center gap-2">
+                    <BarChart3 className="w-5 h-5 text-[#E6A23C]" />
+                    <span>Cohort Attrition & Retention Observations</span>
+                  </h2>
                   <p className="text-xs text-[#5E6B75] mt-1">
                     Formal audit of enrollments versus non-completion dropouts across the training lifecycle.
                   </p>
@@ -1202,7 +1312,8 @@ export function GovernmentDashboard({
 
                 <div className="bg-white border border-[#DCE3E7] rounded-lg p-6">
                   {intelligence.kpis.attrition.hasSufficientData ? (
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 font-mono text-xs">
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 font-mono text-xs">
                       <div className="p-4 bg-[#FAF9F5] border border-[#DCE3E7] rounded">
                         <div className="text-[#5E6B75]">Enrolled Trainees</div>
                         <div className="text-2xl font-bold text-[#18324A] mt-1">{intelligence.kpis.attrition.enrolled}</div>
@@ -1220,6 +1331,43 @@ export function GovernmentDashboard({
                         <div className="text-2xl font-bold text-[#18324A] mt-1">{intelligence.kpis.attrition.dropoutRate}%</div>
                       </div>
                     </div>
+
+                    {/* Controlled Dropout Reasons Distribution (Section 9 & 10) */}
+                    {intelligence.kpis.attrition.reasonsBreakdown && intelligence.kpis.attrition.reasonsBreakdown.length > 0 ? (
+                      <div className="mt-6 border border-[#DCE3E7] rounded-lg overflow-hidden">
+                        <div className="bg-[#FAF7EE] px-4 py-3 border-b border-[#DCE3E7] flex justify-between items-center">
+                          <span className="text-xs font-mono font-bold text-[#16212B]">
+                            Observed Dropout Reason Distribution (PostgreSQL Database Records)
+                          </span>
+                          <span className="text-[11px] font-mono text-[#5E6B75]">
+                            {intelligence.kpis.attrition.reasonsBreakdown.length} unique reported reasons
+                          </span>
+                        </div>
+                        <table className="w-full text-left text-xs font-mono">
+                          <thead>
+                            <tr className="border-b border-[#DCE3E7] bg-[#FAF9F5] text-[#5E6B75]">
+                              <th className="py-2.5 px-4 font-semibold uppercase">Dropout Reason</th>
+                              <th className="py-2.5 px-4 font-semibold uppercase text-right">Count</th>
+                              <th className="py-2.5 px-4 font-semibold uppercase text-right">Percentage</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[#DCE3E7]">
+                            {intelligence.kpis.attrition.reasonsBreakdown.map((rb, idx) => (
+                              <tr key={idx} className="hover:bg-[#FAF9F5]">
+                                <td className="py-2.5 px-4 font-sans font-medium text-[#16212B]">{rb.reason}</td>
+                                <td className="py-2.5 px-4 text-right font-bold text-[#18324A]">{rb.count}</td>
+                                <td className="py-2.5 px-4 text-right font-bold text-[#087F8C]">{rb.percentage}%</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="mt-4 p-4 bg-[#FAF9F5] border border-[#DCE3E7] rounded text-xs font-mono text-[#5E6B75] text-center">
+                        Zero dropout incidents recorded in scope. Cohort completion currently tracking at 100% of non-dropped candidates.
+                      </div>
+                    )}
+                  </div>
                   ) : (
                     <div className="p-8 text-center bg-amber-50/60 border border-amber-200 rounded-lg">
                       <AlertTriangle className="w-8 h-8 text-amber-700 mx-auto mb-2" />
@@ -1229,6 +1377,99 @@ export function GovernmentDashboard({
                       <p className="text-xs text-amber-800/80 mt-1 max-w-lg mx-auto">
                         In accordance with NCVET telemetry standards, missing dropout records are not assumed to be zero attrition. Formal dropout telemetry requires provider enrollment disengagement logs.
                       </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* VIEW: DATA QUALITY & COMPLETENESS (Section 14, 15, 16, 18) */}
+            {activeTab === 'data-quality' && (
+              <div className="space-y-6">
+                <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                      <h2 className="text-lg font-bold text-[#18324A]">Outcome Data Completeness & Quality Signals</h2>
+                      <p className="text-xs text-[#5E6B75] mt-1">
+                        Sovereign verification audit of outcome data availability, evidence thresholds, and documentation completeness.
+                      </p>
+                    </div>
+                    <div className="text-xs font-mono text-[#18324A] bg-[#E8F1F7] px-3 py-1.5 rounded border border-[#B8D5E5]">
+                      <strong>Statutory Distinction (Section 15):</strong> Data Coverage ≠ Outcome Rate.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-[#DCE3E7] rounded-lg p-6">
+                  {/* Coverage Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 font-mono text-xs">
+                    <div className="p-4 bg-[#FAF9F5] border border-[#DCE3E7] rounded">
+                      <div className="text-[#5E6B75]">Employment Outcome Coverage</div>
+                      <div className="text-2xl font-bold text-[#18324A] mt-1">
+                        {intelligence.dataQuality?.employmentOutcomeCoverage ?? 0}%
+                      </div>
+                      <div className="text-[10px] text-[#5E6B75] mt-1">Candidates with documented post-training status</div>
+                    </div>
+                    <div className="p-4 bg-[#FAF9F5] border border-[#DCE3E7] rounded">
+                      <div className="text-[#5E6B75]">Certification Coverage</div>
+                      <div className="text-2xl font-bold text-[#18324A] mt-1">
+                        {intelligence.dataQuality?.certificationCoverage ?? 0}%
+                      </div>
+                      <div className="text-[10px] text-[#5E6B75] mt-1">Issued assessment certificates on ledger</div>
+                    </div>
+                    <div className="p-4 bg-[#FAF9F5] border border-[#DCE3E7] rounded">
+                      <div className="text-[#5E6B75]">Follow-Up Verification Coverage</div>
+                      <div className="text-2xl font-bold text-[#18324A] mt-1">
+                        {intelligence.dataQuality?.followUpCoverage ?? 0}%
+                      </div>
+                      <div className="text-[10px] text-[#5E6B75] mt-1">Completed longitudinal verification surveys</div>
+                    </div>
+                    <div className="p-4 bg-[#FAF9F5] border border-[#DCE3E7] rounded">
+                      <div className="text-[#5E6B75]">Salary History Documentation</div>
+                      <div className="text-2xl font-bold text-[#18324A] mt-1">
+                        {intelligence.dataQuality?.salaryHistoryCoverage ?? 0}%
+                      </div>
+                      <div className="text-[10px] text-[#5E6B75] mt-1">Verified pre & post-placement wage entries</div>
+                    </div>
+                  </div>
+
+                  {/* Comparative distinction box */}
+                  <div className="mt-6 p-4 bg-[#FAF7EE] border border-[#DCE3E7] rounded-lg text-xs font-mono space-y-2">
+                    <div className="font-bold text-[#16212B] flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-[#087F8C]" />
+                      <span>NCVET Telemetry Rule — Data Coverage vs Outcome Rate:</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                      <div className="p-3 bg-white border border-[#DCE3E7] rounded">
+                        <div className="font-bold text-[#18324A]">Outcome Data Coverage: {intelligence.dataQuality?.employmentOutcomeCoverage ?? 0}%</div>
+                        <p className="text-[11px] text-[#5E6B75] mt-1">
+                          Reflects telemetry completeness. {intelligence.dataQuality?.employmentOutcomeCoverage ?? 0}% of eligible candidates have recorded post-training status in PostgreSQL.
+                        </p>
+                      </div>
+                      <div className="p-3 bg-white border border-[#DCE3E7] rounded">
+                        <div className="font-bold text-[#164627]">Employment Outcome Rate: {intelligence.kpis.employmentRate ?? 0}%</div>
+                        <p className="text-[11px] text-[#5E6B75] mt-1">
+                          Reflects verified programmatic placement. {intelligence.kpis.employmentRate ?? 0}% of eligible candidates achieved authenticated wage, self, or apprenticeship.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Data Quality Signals */}
+                  {intelligence.dataQuality?.signals && intelligence.dataQuality.signals.filter(Boolean).length > 0 && (
+                    <div className="mt-6 p-4 bg-amber-50/70 border border-amber-200 rounded-lg">
+                      <div className="text-xs font-mono font-bold text-amber-900 mb-2 flex items-center gap-1.5">
+                        <AlertCircle className="w-4 h-4 text-amber-700" />
+                        <span>Active Telemetry Data Quality Signals:</span>
+                      </div>
+                      <ul className="space-y-1.5 text-xs font-mono text-amber-800">
+                        {intelligence.dataQuality.signals.filter(Boolean).map((sig, idx) => (
+                          <li key={idx} className="flex items-start gap-2">
+                            <span className="text-amber-500 font-bold">•</span>
+                            <span>{sig}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   )}
                 </div>

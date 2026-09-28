@@ -70,7 +70,7 @@ export function App() {
     if (typeof window === 'undefined') return 'overview';
     const params = new URLSearchParams(window.location.search);
     const tab = params.get('gtab') as GovernmentTab | null;
-    if (tab && ['overview', 'analytics', 'programmes', 'providers', 'districts', 'skills', 'non-placement', 'attrition', 'interventions', 'follow-ups'].includes(tab)) {
+    if (tab && ['overview', 'analytics', 'programmes', 'providers', 'districts', 'skills', 'non-placement', 'attrition', 'data-quality', 'interventions', 'follow-ups'].includes(tab)) {
       return tab;
     }
     return 'overview';
@@ -126,7 +126,7 @@ export function App() {
       }
 
       const gtabParam = params.get('gtab') as GovernmentTab | null;
-      if (gtabParam && ['overview', 'analytics', 'programmes', 'providers', 'districts', 'skills', 'non-placement', 'attrition', 'interventions', 'follow-ups'].includes(gtabParam)) {
+      if (gtabParam && ['overview', 'analytics', 'programmes', 'providers', 'districts', 'skills', 'non-placement', 'attrition', 'data-quality', 'interventions', 'follow-ups'].includes(gtabParam)) {
         setGovernmentTab(gtabParam);
       }
 

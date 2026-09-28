@@ -27,8 +27,23 @@ import {
   HelpCircle, 
   Zap, 
   FileText, 
-  AlertCircle 
+  AlertCircle,
+  UserMinus,
+  BarChart3,
+  Database
 } from 'lucide-react';
+
+const CONTROLLED_DROPOUT_REASONS = [
+  'Personal reasons',
+  'Health/family reasons',
+  'Relocation',
+  'Employment elsewhere',
+  'Financial constraints',
+  'Attendance issues',
+  'Skill difficulty',
+  'Programme mismatch',
+  'Other'
+];
 
 interface ProviderDashboardProps {
   onNavigateHome: () => void;
@@ -67,6 +82,57 @@ export function ProviderDashboard({
 
   // Deploy intervention modal/action state
   const [deployingModule, setDeployingModule] = useState(false);
+
+  // Dropout Recording Modal State (Phase 4 Real PostgreSQL Workflow)
+  const [dropoutModalOpen, setDropoutModalOpen] = useState(false);
+  const [selectedDropoutTarget, setSelectedDropoutTarget] = useState<{
+    enrollmentId: string;
+    traineeName: string;
+    cohortName: string;
+  } | null>(null);
+  const [dropoutDate, setDropoutDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [dropoutReason, setDropoutReason] = useState('Personal reasons');
+  const [dropoutNotes, setDropoutNotes] = useState('');
+  const [dropoutSubmitting, setDropoutSubmitting] = useState(false);
+  const [dropoutError, setDropoutError] = useState<string | null>(null);
+
+  const handleOpenDropoutModal = (target: { enrollmentId: string; traineeName: string; cohortName: string }) => {
+    setSelectedDropoutTarget(target);
+    setDropoutDate(new Date().toISOString().split('T')[0]);
+    setDropoutReason('Personal reasons');
+    setDropoutNotes('');
+    setDropoutError(null);
+    setDropoutModalOpen(true);
+  };
+
+  const handleCloseDropoutModal = () => {
+    setDropoutModalOpen(false);
+    setSelectedDropoutTarget(null);
+    setDropoutError(null);
+  };
+
+  const handleConfirmDropout = async () => {
+    if (!selectedDropoutTarget) return;
+    setDropoutSubmitting(true);
+    setDropoutError(null);
+    try {
+      await providerService.recordDropout({
+        enrollmentId: selectedDropoutTarget.enrollmentId,
+        dropoutDate,
+        reason: dropoutReason,
+        notes: dropoutNotes,
+      });
+      setNotice(`Dropout successfully recorded for ${selectedDropoutTarget.traineeName}. Cohort enrollment and attrition telemetry updated.`);
+      handleCloseDropoutModal();
+      await loadIntelligence();
+      setTimeout(() => setNotice(null), 5000);
+    } catch (err: any) {
+      console.error('Failed to record dropout:', err);
+      setDropoutError(err.message || 'Failed to record dropout in database.');
+    } finally {
+      setDropoutSubmitting(false);
+    }
+  };
 
   // Load Provider Outcome Intelligence from PostgreSQL RPC
   const loadIntelligence = useCallback(async () => {
@@ -655,6 +721,157 @@ export function ProviderDashboard({
               )}
             </div>
 
+            {/* SECTION 14 & 17: OUTCOME DATA QUALITY & COMPLETENESS */}
+            <div className="bg-white border border-[#DCE3E7] rounded-lg p-6 shadow-xs">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#DCE3E7] pb-4 mb-4">
+                <div>
+                  <h3 className="font-serif font-bold text-base text-[#16212B] flex items-center gap-2">
+                    <Database className="w-4 h-4 text-[#087F8C]" />
+                    Outcome Data Quality & Coverage Telemetry
+                  </h3>
+                  <p className="text-xs text-[#5E6B75] mt-0.5">
+                    Audit of outcome telemetry completeness across provider-associated trainees.
+                  </p>
+                </div>
+                <div className="text-xs font-mono text-[#18324A] bg-[#E8F1F7] px-3 py-1.5 rounded border border-[#B8D5E5]">
+                  <strong>Statutory Clarification:</strong> Data Coverage measures records present in PostgreSQL. Outcome Rate measures actual employment / credential achievement.
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="p-4 rounded bg-[#FAF9F5] border border-[#DCE3E7]">
+                  <div className="text-xs font-mono text-[#5E6B75] uppercase">Employment Coverage</div>
+                  <div className="text-2xl font-serif font-bold text-[#16212B] mt-1">
+                    {data?.dataCompleteness?.employmentOutcomeCoverage ?? 0}%
+                  </div>
+                  <div className="text-[10px] font-mono text-[#5E6B75] mt-1">Eligible trainees with recorded outcome</div>
+                </div>
+
+                <div className="p-4 rounded bg-[#FAF9F5] border border-[#DCE3E7]">
+                  <div className="text-xs font-mono text-[#5E6B75] uppercase">Certification Coverage</div>
+                  <div className="text-2xl font-serif font-bold text-[#16212B] mt-1">
+                    {data?.dataCompleteness?.certificationCoverage ?? 0}%
+                  </div>
+                  <div className="text-[10px] font-mono text-[#5E6B75] mt-1">Assessment credentials issued in ledger</div>
+                </div>
+
+                <div className="p-4 rounded bg-[#FAF9F5] border border-[#DCE3E7]">
+                  <div className="text-xs font-mono text-[#5E6B75] uppercase">Follow-Up Coverage</div>
+                  <div className="text-2xl font-serif font-bold text-[#16212B] mt-1">
+                    {data?.dataCompleteness?.followUpCoverage ?? 0}%
+                  </div>
+                  <div className="text-[10px] font-mono text-[#5E6B75] mt-1">Completed longitudinal verification surveys</div>
+                </div>
+
+                <div className="p-4 rounded bg-[#FAF9F5] border border-[#DCE3E7]">
+                  <div className="text-xs font-mono text-[#5E6B75] uppercase">Salary History Coverage</div>
+                  <div className="text-2xl font-serif font-bold text-[#16212B] mt-1">
+                    {data?.dataCompleteness?.salaryHistoryCoverage ?? 0}%
+                  </div>
+                  <div className="text-[10px] font-mono text-[#5E6B75] mt-1">Verified baseline & post-placement wage records</div>
+                </div>
+              </div>
+
+              {/* Data Quality Signals */}
+              {data?.dataCompleteness?.signals && data.dataCompleteness.signals.filter(Boolean).length > 0 && (
+                <div className="mt-4 p-3 bg-amber-50/70 border border-amber-200 rounded-md">
+                  <div className="text-xs font-mono font-bold text-amber-900 mb-1 flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 text-amber-700" />
+                    Active Data Quality Signals:
+                  </div>
+                  <ul className="space-y-1 text-xs font-mono text-amber-800">
+                    {data.dataCompleteness.signals.filter(Boolean).map((sig, idx) => (
+                      <li key={idx} className="flex items-start gap-1.5">
+                        <span className="text-amber-500">•</span>
+                        <span>{sig}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            {/* SECTION 8, 9 & 10: COHORT ATTRITION & DROPOUT ANALYTICS */}
+            <div className="bg-white border border-[#DCE3E7] rounded-lg p-6 shadow-xs">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#DCE3E7] pb-4 mb-4">
+                <div>
+                  <h3 className="font-serif font-bold text-base text-[#16212B] flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4 text-[#E6A23C]" />
+                    Cohort Attrition & Retention Telemetry
+                  </h3>
+                  <p className="text-xs text-[#5E6B75] mt-0.5">
+                    Realtime tracking of cohort enrollments, completions, and recorded trainee dropouts.
+                  </p>
+                </div>
+                <div className="text-xs font-mono text-[#5E6B75] bg-[#FAF9F5] px-2.5 py-1 rounded border border-[#DCE3E7]">
+                  {data?.attrition?.hasSufficientData ? 'Active cohort attrition telemetry' : 'Attrition data unavailable'}
+                </div>
+              </div>
+
+              {data?.attrition?.hasSufficientData ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 font-mono text-xs">
+                    <div className="p-4 bg-[#FAF9F5] border border-[#DCE3E7] rounded">
+                      <div className="text-[#5E6B75]">Total Enrolled</div>
+                      <div className="text-2xl font-bold text-[#18324A] mt-1">{data.attrition.enrolled}</div>
+                      <div className="text-[10px] text-[#5E6B75] mt-1">Eligible cohort enrollments</div>
+                    </div>
+                    <div className="p-4 bg-[#FAF9F5] border border-[#DCE3E7] rounded">
+                      <div className="text-[#5E6B75]">Completed Training</div>
+                      <div className="text-2xl font-bold text-[#164627] mt-1">{data.attrition.completed}</div>
+                      <div className="text-[10px] text-[#5E6B75] mt-1">Graduated or completed milestones</div>
+                    </div>
+                    <div className="p-4 bg-[#FAF9F5] border border-[#DCE3E7] rounded">
+                      <div className="text-[#5E6B75]">Recorded Dropouts</div>
+                      <div className="text-2xl font-bold text-rose-700 mt-1">{data.attrition.dropped}</div>
+                      <div className="text-[10px] text-[#5E6B75] mt-1">Verified dropout events logged</div>
+                    </div>
+                    <div className="p-4 bg-[#FAF9F5] border border-[#DCE3E7] rounded">
+                      <div className="text-[#5E6B75]">Observed Dropout Rate</div>
+                      <div className="text-2xl font-bold text-[#18324A] mt-1">{data.attrition.dropoutRate ?? 0}%</div>
+                      <div className="text-[10px] text-[#5E6B75] mt-1">Dropped / Enrolled × 100</div>
+                    </div>
+                  </div>
+
+                  {/* Controlled Reasons Distribution */}
+                  {data.attrition.reasonsBreakdown && data.attrition.reasonsBreakdown.length > 0 && (
+                    <div className="mt-4 border border-[#DCE3E7] rounded-lg overflow-hidden">
+                      <div className="bg-[#FAF7EE] px-4 py-2 border-b border-[#DCE3E7] text-xs font-mono font-bold text-[#16212B]">
+                        Dropout Reason Distribution (Real Database Records)
+                      </div>
+                      <table className="w-full text-left text-xs font-mono">
+                        <thead>
+                          <tr className="border-b border-[#DCE3E7] bg-[#FAF9F5] text-[#5E6B75]">
+                            <th className="py-2 px-4 font-semibold uppercase">Reason</th>
+                            <th className="py-2 px-4 font-semibold uppercase text-right">Count</th>
+                            <th className="py-2 px-4 font-semibold uppercase text-right">Percentage</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#DCE3E7]">
+                          {data.attrition.reasonsBreakdown.map((rb, idx) => (
+                            <tr key={idx} className="hover:bg-[#FAF9F5]">
+                              <td className="py-2 px-4 font-sans font-medium text-[#16212B]">{rb.reason}</td>
+                              <td className="py-2 px-4 text-right font-bold text-[#18324A]">{rb.count}</td>
+                              <td className="py-2 px-4 text-right font-bold text-[#087F8C]">{rb.percentage}%</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="p-6 text-center bg-[#FAF9F5] rounded border border-dashed border-[#DCE3E7]">
+                  <p className="text-sm font-mono text-[#5E6B75]">
+                    Attrition data unavailable for current dataset.
+                  </p>
+                  <p className="text-xs text-[#5E6B75] mt-1">
+                    Providers record trainee dropouts via Training Records to activate cohort retention telemetry.
+                  </p>
+                </div>
+              )}
+            </div>
+
             {/* Quick Programmes Summary Table */}
             <div className="bg-white border border-[#DCE3E7] rounded-lg p-6 shadow-xs">
               <div className="flex items-center justify-between mb-4">
@@ -926,7 +1143,7 @@ export function ProviderDashboard({
                   Associated Trainees Registry
                 </h2>
                 <p className="text-xs text-[#5E6B75] mt-1">
-                  Provider-associated trainees with strict database-level RLS isolation. Sensitive PII (Aadhaar, credentials) is masked.
+                  Provider-associated trainees with strict database-level RLS isolation and DPDP-compliant minimal data exposure.
                 </p>
               </div>
               <div className="text-xs font-mono text-[#5E6B75]">
@@ -992,7 +1209,7 @@ export function ProviderDashboard({
                         <th className="py-3 px-4 font-semibold uppercase">Certification</th>
                         <th className="py-3 px-4 font-semibold uppercase">Employment Outcome</th>
                         <th className="py-3 px-4 font-semibold uppercase">Skill Gaps</th>
-                        <th className="py-3 px-4 font-semibold uppercase text-right">Dossier</th>
+                        <th className="py-3 px-4 font-semibold uppercase text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#DCE3E7]">
@@ -1008,12 +1225,19 @@ export function ProviderDashboard({
                           </td>
                           <td className="py-3.5 px-4">
                             <span className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
-                              t.trainingStatus === 'COMPLETED'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-blue-100 text-blue-800'
+                              t.trainingStatus === 'DROPPED'
+                                ? 'bg-rose-100 text-rose-800'
+                                : t.trainingStatus === 'COMPLETED'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-blue-100 text-blue-800'
                             }`}>
                               {t.trainingStatus}
                             </span>
+                            {t.dropoutReason && (
+                              <div className="text-[10px] text-rose-700 mt-0.5 truncate max-w-[140px]" title={t.dropoutReason}>
+                                {t.dropoutReason}
+                              </div>
+                            )}
                           </td>
                           <td className="py-3.5 px-4">
                             {t.isCertified ? (
@@ -1059,12 +1283,28 @@ export function ProviderDashboard({
                             )}
                           </td>
                           <td className="py-3.5 px-4 text-right">
-                            <button
-                              onClick={() => handleOpenTrainee(t.id)}
-                              className="px-2.5 py-1.5 rounded bg-[#18324A] hover:bg-[#0F253B] text-white text-[11px] font-mono font-semibold transition-colors cursor-pointer"
-                            >
-                              Inspect
-                            </button>
+                            <div className="inline-flex items-center gap-2">
+                              {t.trainingStatus !== 'DROPPED' && (
+                                <button
+                                  onClick={() => handleOpenDropoutModal({
+                                    enrollmentId: (t as any).enrollmentId || t.id,
+                                    traineeName: t.name,
+                                    cohortName: t.cohortName,
+                                  })}
+                                  className="px-2 py-1 rounded border border-[#DCE3E7] hover:border-red-300 hover:bg-red-50 text-red-700 text-[11px] font-mono font-semibold transition-colors cursor-pointer inline-flex items-center gap-1"
+                                  title="Record Trainee Dropout"
+                                >
+                                  <UserMinus className="w-3 h-3" />
+                                  <span>Dropout</span>
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleOpenTrainee(t.id)}
+                                className="px-2.5 py-1.5 rounded bg-[#18324A] hover:bg-[#0F253B] text-white text-[11px] font-mono font-semibold transition-colors cursor-pointer"
+                              >
+                                Inspect
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -1161,6 +1401,7 @@ export function ProviderDashboard({
                         <th className="py-3 px-4 font-semibold uppercase">Sector</th>
                         <th className="py-3 px-4 font-semibold uppercase">Status</th>
                         <th className="py-3 px-4 font-semibold uppercase">Certification</th>
+                        <th className="py-3 px-4 font-semibold uppercase text-right">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#DCE3E7]">
@@ -1173,12 +1414,19 @@ export function ProviderDashboard({
                           <td className="py-3 px-4 text-[#5E6B75]">{r.sector}</td>
                           <td className="py-3 px-4">
                             <span className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
-                              r.status === 'COMPLETED'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-blue-100 text-blue-800'
+                              r.status === 'DROPPED'
+                                ? 'bg-rose-100 text-rose-800'
+                                : r.status === 'COMPLETED'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-blue-100 text-blue-800'
                             }`}>
                               {r.status}
                             </span>
+                            {r.dropoutReason && (
+                              <div className="text-[10px] text-rose-700 mt-0.5 truncate max-w-[140px]" title={r.dropoutReason}>
+                                {r.dropoutReason}
+                              </div>
+                            )}
                           </td>
                           <td className="py-3 px-4">
                             {r.isCertified ? (
@@ -1188,6 +1436,27 @@ export function ProviderDashboard({
                               </div>
                             ) : (
                               <span className="text-[#5E6B75]">Pending Assessment</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            {r.status === 'DROPPED' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-100 text-rose-800" title={`Reason: ${r.dropoutReason || 'Logged'}`}>
+                                <UserMinus className="w-3 h-3" />
+                                <span>Dropped</span>
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => handleOpenDropoutModal({
+                                  enrollmentId: r.enrollmentId,
+                                  traineeName: r.traineeName,
+                                  cohortName: r.cohortName,
+                                })}
+                                className="px-2.5 py-1 rounded border border-[#DCE3E7] hover:border-red-300 hover:bg-red-50 text-red-700 text-[11px] font-mono font-semibold transition-colors cursor-pointer inline-flex items-center gap-1"
+                                title="Record Trainee Dropout"
+                              >
+                                <UserMinus className="w-3 h-3" />
+                                <span>Record Dropout</span>
+                              </button>
                             )}
                           </td>
                         </tr>
@@ -1724,6 +1993,128 @@ export function ProviderDashboard({
                 className="px-4 py-2 bg-[#18324A] hover:bg-[#0F253B] text-white rounded text-xs font-mono font-semibold transition-colors cursor-pointer"
               >
                 Close Dossier
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ========================================================= */}
+      {/* DROPOUT RECORDING MODAL (Phase 4 Real PostgreSQL Workflow) */}
+      {/* ========================================================= */}
+      {dropoutModalOpen && selectedDropoutTarget && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-[#DCE3E7] rounded-lg shadow-xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="bg-[#18324A] text-white px-5 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <UserMinus className="w-4 h-4 text-rose-300" />
+                <h3 className="font-serif font-bold text-sm">Record Trainee Dropout</h3>
+              </div>
+              <button
+                onClick={handleCloseDropoutModal}
+                disabled={dropoutSubmitting}
+                className="text-[#DCE3E7] hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <div className="p-6 space-y-4">
+              {dropoutError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded text-xs font-mono text-red-700 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                  <span>{dropoutError}</span>
+                </div>
+              )}
+
+              {/* Trainee & Cohort Information */}
+              <div className="p-3.5 bg-[#FAF9F5] border border-[#DCE3E7] rounded-md space-y-1">
+                <div className="text-xs font-mono text-[#5E6B75]">Trainee Name:</div>
+                <div className="font-sans font-bold text-sm text-[#16212B]">{selectedDropoutTarget.traineeName}</div>
+                <div className="text-xs font-mono text-[#5E6B75] mt-1">Cohort:</div>
+                <div className="text-xs font-mono text-[#18324A] font-semibold">{selectedDropoutTarget.cohortName}</div>
+              </div>
+
+              {/* Dropout Date */}
+              <div>
+                <label className="block text-xs font-mono font-semibold text-[#16212B] mb-1">
+                  Dropout Effective Date <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={dropoutDate}
+                  onChange={(e) => setDropoutDate(e.target.value)}
+                  className="w-full text-xs font-mono bg-white border border-[#DCE3E7] rounded px-3 py-2 focus:outline-none focus:border-[#087F8C]"
+                  required
+                />
+              </div>
+
+              {/* Controlled Reason */}
+              <div>
+                <label className="block text-xs font-mono font-semibold text-[#16212B] mb-1">
+                  Dropout Reason <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={dropoutReason}
+                  onChange={(e) => setDropoutReason(e.target.value)}
+                  className="w-full text-xs font-mono bg-white border border-[#DCE3E7] rounded px-3 py-2 focus:outline-none focus:border-[#087F8C]"
+                >
+                  {CONTROLLED_DROPOUT_REASONS.map((r) => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+                <p className="text-[10px] font-mono text-[#5E6B75] mt-1">
+                  Standardized NCVET controlled reason vocabulary for aggregate policy analysis.
+                </p>
+              </div>
+
+              {/* Optional Notes */}
+              <div>
+                <label className="block text-xs font-mono font-semibold text-[#16212B] mb-1">
+                  Disengagement Notes (Optional)
+                </label>
+                <textarea
+                  value={dropoutNotes}
+                  onChange={(e) => setDropoutNotes(e.target.value)}
+                  rows={2}
+                  placeholder="Record contextual circumstances or follow-up counseling recommendations..."
+                  className="w-full text-xs font-mono bg-white border border-[#DCE3E7] rounded px-3 py-2 focus:outline-none focus:border-[#087F8C] resize-none"
+                />
+              </div>
+
+              <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded text-[11px] font-mono text-amber-900">
+                <strong>Statutory Notice:</strong> This action permanently logs a cohort disengagement event in PostgreSQL audit telemetry and marks the enrollment status as DROPPED.
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="p-4 border-t border-[#DCE3E7] bg-[#FAF7EE] flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={handleCloseDropoutModal}
+                disabled={dropoutSubmitting}
+                className="px-3.5 py-1.5 rounded border border-[#DCE3E7] bg-white hover:bg-[#FAF9F5] text-xs font-mono text-[#5E6B75] transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDropout}
+                disabled={dropoutSubmitting}
+                className="px-4 py-1.5 rounded bg-rose-700 hover:bg-rose-800 text-white text-xs font-mono font-bold transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {dropoutSubmitting ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Committing to DB...</span>
+                  </>
+                ) : (
+                  <>
+                    <UserMinus className="w-3.5 h-3.5" />
+                    <span>Record Dropout</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

@@ -308,6 +308,16 @@ export const Header: React.FC<HeaderProps> = ({
       isActive: currentView === 'government-dashboard' && activeGovernmentTab === 'attrition',
     },
     {
+      id: 'data-quality',
+      label: 'Data Quality',
+      onClick: () => {
+        onNavigate('government-dashboard', 'government');
+        onSelectGovernmentTab?.('data-quality');
+        setMobileMenuOpen(false);
+      },
+      isActive: currentView === 'government-dashboard' && activeGovernmentTab === 'data-quality',
+    },
+    {
       id: 'interventions',
       label: 'Interventions',
       onClick: () => {

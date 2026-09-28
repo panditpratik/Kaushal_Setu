@@ -180,6 +180,48 @@ export interface ProviderOutcomeIntelligence {
       label: string;
     };
     skillGapsCount: number;
+    attrition?: {
+      hasSufficientData: boolean;
+      enrolled: number;
+      completed: number;
+      dropped: number;
+      dropoutRate: number | null;
+      label: string;
+      reasonsBreakdown: {
+        reason: string;
+        count: number;
+        percentage: number;
+      }[];
+    };
+    dataCompleteness?: {
+      totalTrainees: number;
+      employmentOutcomeCoverage: number;
+      certificationCoverage: number;
+      followUpCoverage: number;
+      salaryHistoryCoverage: number;
+      signals: (string | null)[];
+    };
+  };
+  attrition?: {
+    hasSufficientData: boolean;
+    enrolled: number;
+    completed: number;
+    dropped: number;
+    dropoutRate: number | null;
+    label: string;
+    reasonsBreakdown: {
+      reason: string;
+      count: number;
+      percentage: number;
+    }[];
+  };
+  dataCompleteness?: {
+    totalTrainees: number;
+    employmentOutcomeCoverage: number;
+    certificationCoverage: number;
+    followUpCoverage: number;
+    salaryHistoryCoverage: number;
+    signals: (string | null)[];
   };
   programmes: {
     id: string;
@@ -231,6 +273,9 @@ export interface ProviderOutcomeIntelligence {
     hasSkillGap: boolean;
     skillGapCount: number;
     followUpStatus: string;
+    dropoutDate?: string | null;
+    dropoutReason?: string | null;
+    dropoutNotes?: string | null;
   }[];
   trainingRecords: {
     enrollmentId: string;
@@ -247,6 +292,9 @@ export interface ProviderOutcomeIntelligence {
     isCompleted: boolean;
     isCertified: boolean;
     certificateNumber?: string | null;
+    dropoutDate?: string | null;
+    dropoutReason?: string | null;
+    dropoutNotes?: string | null;
   }[];
   skillGaps: {
     skillName: string;
@@ -343,6 +391,11 @@ export interface GovernmentOutcomeIntelligence {
       dropped: number;
       dropoutRate: number | null;
       label: string;
+      reasonsBreakdown?: {
+        reason: string;
+        count: number;
+        percentage: number;
+      }[];
     };
   };
   funnel: {
@@ -442,6 +495,14 @@ export interface GovernmentOutcomeIntelligence {
     observedOutcomeNotes?: string | null;
     createdAt: string;
   }[];
+  dataQuality?: {
+    totalEligible?: number;
+    employmentOutcomeCoverage: number;
+    certificationCoverage: number;
+    followUpCoverage: number;
+    salaryHistoryCoverage: number;
+    signals: (string | null)[];
+  };
 }
 
 export interface GovernmentAnalytics {
@@ -984,6 +1045,23 @@ export const providerService = {
     return data as TraineeDossier;
   },
 
+  // Record trainee dropout in cohort enrollment
+  recordDropout: async (payload: {
+    enrollmentId: string;
+    dropoutDate?: string;
+    reason: string;
+    notes?: string;
+  }) => {
+    const { data, error } = await supabase.rpc('record_trainee_dropout', {
+      p_enrollment_id: payload.enrollmentId,
+      p_dropout_date: payload.dropoutDate || new Date().toISOString(),
+      p_reason: payload.reason,
+      p_notes: payload.notes || null,
+    });
+    if (error) handleSupabaseError(error, 'Failed to record trainee dropout in database');
+    return data;
+  },
+
   // Write operation via Supabase Edge Function: deploy-intervention
   deployModule: async (
     providerId: string = 'centurion',
@@ -1002,20 +1080,22 @@ export const providerService = {
 };
 
 export const governmentService = {
-  // Primary Phase 3 Government Outcome Intelligence RPC
+  // Primary Phase 3 & 4 Government Outcome Intelligence RPC
   getOutcomeIntelligence: async (
-    filters: { timeRange?: string; district?: string; programme?: string; provider?: string } = {}
+    filters: { timeRange?: string; district?: string; programme?: string; provider?: string; dataQuality?: string } = {}
   ): Promise<GovernmentOutcomeIntelligence> => {
     const timeRange = filters.timeRange || 'all';
     const district = !filters.district || filters.district === 'All' ? null : filters.district;
     const programme = !filters.programme || filters.programme === 'All' ? null : filters.programme;
     const provider = !filters.provider || filters.provider === 'All' ? null : filters.provider;
+    const dataQuality = filters.dataQuality || 'all';
 
     const { data, error } = await supabase.rpc('get_government_outcome_intelligence', {
       p_time_range: timeRange,
       p_district: district,
       p_programme: programme,
       p_provider: provider,
+      p_data_quality: dataQuality,
     });
 
     if (error) {
