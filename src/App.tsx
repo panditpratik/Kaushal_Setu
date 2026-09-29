@@ -243,22 +243,34 @@ export function App() {
       return;
     }
 
-    // Role check for UX navigation
+    // Role check for UX navigation (redirect smoothly to authorized dashboard)
     if (user && profile) {
+      const roleDashboardMap: Record<string, AppView> = {
+        TRAINEE: 'trainee-dashboard',
+        EMPLOYER: 'employer-dashboard',
+        TRAINING_PROVIDER: 'provider-dashboard',
+        GOVERNMENT: 'government-dashboard',
+      };
+      const authorizedView = roleDashboardMap[profile.role] || defaultView;
+
       if (view === 'trainee-dashboard' && profile.role !== 'TRAINEE') {
-        alert('Access Restricted: You are authenticated as ' + profile.role + ', not TRAINEE.');
+        setCurrentView(authorizedView);
+        syncViewToUrl(authorizedView);
         return;
       }
       if (view === 'employer-dashboard' && profile.role !== 'EMPLOYER') {
-        alert('Access Restricted: You are authenticated as ' + profile.role + ', not EMPLOYER.');
+        setCurrentView(authorizedView);
+        syncViewToUrl(authorizedView);
         return;
       }
       if (view === 'provider-dashboard' && profile.role !== 'TRAINING_PROVIDER') {
-        alert('Access Restricted: You are authenticated as ' + profile.role + ', not TRAINING_PROVIDER.');
+        setCurrentView(authorizedView);
+        syncViewToUrl(authorizedView);
         return;
       }
       if (view === 'government-dashboard' && profile.role !== 'GOVERNMENT') {
-        alert('Access Restricted: You are authenticated as ' + profile.role + ', not GOVERNMENT.');
+        setCurrentView(authorizedView);
+        syncViewToUrl(authorizedView);
         return;
       }
     }
@@ -298,6 +310,20 @@ export function App() {
 
   const handleSwitchRole = (roleStr: string) => {
     const role = roleStr as StakeholderRole;
+    const targetRoleMap: Record<StakeholderRole, string> = {
+      trainee: 'TRAINEE',
+      employer: 'EMPLOYER',
+      provider: 'TRAINING_PROVIDER',
+      government: 'GOVERNMENT',
+    };
+    if (user && profile && profile.role !== targetRoleMap[role]) {
+      signOut().then(() => {
+        setCurrentRole(null);
+        setCurrentView('login');
+        syncViewToUrl('login');
+      });
+      return;
+    }
     setCurrentRole(role);
     let target: AppView = 'landing';
     if (role === 'trainee') target = 'trainee-dashboard';

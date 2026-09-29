@@ -32,6 +32,8 @@ export function EmployerDashboard({ onNavigateHome, onSwitchRole }: EmployerDash
   );
   const [feedbackSent, setFeedbackSent] = useState(false);
 
+  const [validatingCandidateId, setValidatingCandidateId] = useState<string | null>(null);
+
   const loadCandidates = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -53,6 +55,32 @@ export function EmployerDashboard({ onNavigateHome, onSwitchRole }: EmployerDash
   useEffect(() => {
     loadCandidates();
   }, [loadCandidates]);
+
+  const handleValidateEmployment = async (cand: EmployerCandidate) => {
+    const candidateId = cand.traineeId || cand.id;
+    setValidatingCandidateId(candidateId);
+    try {
+      await employerService.validateEmployment({
+        candidateId,
+        employmentRecordId: cand.employmentRecordId,
+        status: 'VERIFIED',
+        notes: `Validated by ${authProfile?.name || 'authorized employer'}`
+      });
+      const employerId = authProfile?.employerId || 'default';
+      const updated = await employerService.getCandidates(employerId);
+      setCandidates(updated);
+      if (selectedCandidate && (selectedCandidate.id === cand.id || selectedCandidate.traineeId === candidateId)) {
+        const found = updated.find(c => c.id === cand.id || c.traineeId === candidateId);
+        if (found) setSelectedCandidate(found);
+      }
+      setNotice(`Employment outcome for ${cand.name} successfully validated. Trainee records and government analytics updated.`);
+      setTimeout(() => setNotice(null), 4000);
+    } catch (err: any) {
+      setNotice(`Failed to validate employment: ${err.message}`);
+    } finally {
+      setValidatingCandidateId(null);
+    }
+  };
 
   const handleTransmitFeedback = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,8 +104,13 @@ export function EmployerDashboard({ onNavigateHome, onSwitchRole }: EmployerDash
   const handleVerifyRetention = async (id: string, milestone: '3m' | '6m' | '12m') => {
     try {
       await employerService.verifyRetention(id, milestone);
-      const updated = await employerService.getCandidates('tata');
+      const employerId = authProfile?.employerId || 'default';
+      const updated = await employerService.getCandidates(employerId);
       setCandidates(updated);
+      if (selectedCandidate && (selectedCandidate.id === id || selectedCandidate.traineeId === id)) {
+        const found = updated.find(c => c.id === id || c.traineeId === id);
+        if (found) setSelectedCandidate(found);
+      }
       setNotice(`Verified ${milestone.toUpperCase()} retention in PostgreSQL. Change is saved permanently.`);
       setTimeout(() => setNotice(null), 3000);
     } catch (err: any) {
@@ -233,10 +266,11 @@ export function EmployerDashboard({ onNavigateHome, onSwitchRole }: EmployerDash
                   <th className="py-2.5 px-3">Trainee / Role</th>
                   <th className="py-2.5 px-3">Batch & Partner</th>
                   <th className="py-2.5 px-3">Tenure</th>
+                  <th className="py-2.5 px-3 text-center">Employment Validation</th>
                   <th className="py-2.5 px-3 text-center">3M Check</th>
                   <th className="py-2.5 px-3 text-center">6M Check</th>
                   <th className="py-2.5 px-3 text-center">12M Check</th>
-                  <th className="py-2.5 px-3">Wage Telemetry</th>
+                  <th className="py-2.5 px-3">Wage Status</th>
                   <th className="py-2.5 px-3 text-right">Actions</th>
                 </tr>
               </thead>
@@ -263,6 +297,24 @@ export function EmployerDashboard({ onNavigateHome, onSwitchRole }: EmployerDash
 
                     <td className="py-3 px-3 font-bold text-[#0F253B]">
                       {cand.tenure}
+                    </td>
+
+                    {/* Employment Validation Action */}
+                    <td className="py-3 px-3 text-center">
+                      {cand.validationStatus === 'VERIFIED' ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] bg-[#D8EEDF] text-[#164627] font-semibold border border-[#B6DBC0]">
+                          <CheckCircle2 className="w-3 h-3 text-[#16803D]" /> Validated by Employer
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleValidateEmployment(cand)}
+                          disabled={validatingCandidateId === (cand.traineeId || cand.id)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[10px] bg-[#18324A] hover:bg-[#0F253B] text-white font-semibold transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                          <span>{validatingCandidateId === (cand.traineeId || cand.id) ? 'Validating...' : 'Validate Employment'}</span>
+                        </button>
+                      )}
                     </td>
 
                     {/* 3-Month Status */}
@@ -437,10 +489,24 @@ export function EmployerDashboard({ onNavigateHome, onSwitchRole }: EmployerDash
                   <div className="text-[11px] text-[#4A5D70]">Confirmed Tenure: {selectedCandidate.tenure}</div>
                 </div>
 
-                <div className="p-3 bg-white border border-[#D5CEAE] rounded space-y-1">
+                <div className="p-3 bg-white border border-[#D5CEAE] rounded space-y-2">
                   <div className="text-[10px] text-[#7A8C9E] uppercase">Validation Status</div>
-                  <div className="font-bold text-[#0F253B]">
-                    Status: <span className="text-emerald-700">{selectedCandidate.validationStatus}</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-bold text-[#0F253B]">
+                      <span className={selectedCandidate.validationStatus === 'VERIFIED' ? 'text-emerald-700' : 'text-amber-700'}>
+                        {selectedCandidate.validationStatus === 'VERIFIED' ? 'Validated by Employer' : 'Pending Employer Validation'}
+                      </span>
+                    </div>
+                    {selectedCandidate.validationStatus !== 'VERIFIED' && (
+                      <button
+                        onClick={() => handleValidateEmployment(selectedCandidate)}
+                        disabled={validatingCandidateId === (selectedCandidate.traineeId || selectedCandidate.id)}
+                        className="px-2.5 py-1 bg-[#18324A] hover:bg-[#0F253B] text-white rounded text-[10px] font-mono cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                      >
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                        <span>{validatingCandidateId === (selectedCandidate.traineeId || selectedCandidate.id) ? 'Validating...' : 'Validate'}</span>
+                      </button>
+                    )}
                   </div>
                   <div className="text-[11px] text-[#52667A]">
                     6M Retention: {selectedCandidate.retention6m} · 12M: {selectedCandidate.retention12m}

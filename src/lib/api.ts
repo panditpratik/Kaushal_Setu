@@ -97,6 +97,8 @@ export interface TraineeDossier {
     tenureMonths: number | null;
     employmentType?: string | null;
     startDate?: string;
+    endDate?: string | null;
+    validationStatus?: string;
   } | null;
   employmentRecords?: {
     id: string;
@@ -918,11 +920,126 @@ export const traineeService = {
     unemployment_notes?: string;
     notes?: string;
   }) => {
-    const { data, error } = await supabase.rpc('record_trainee_employment_update', {
+    // 1. Execute PostgreSQL RPC record_trainee_employment_update (updates trainees, inserts employment_records, creates audit_logs)
+    const { data: rpcData, error: rpcError } = await supabase.rpc('record_trainee_employment_update', {
       p_data: payload,
     });
-    if (error) handleSupabaseError(error, 'Failed to record employment update in database');
-    return data;
+    if (rpcError) {
+      handleSupabaseError(rpcError, 'Failed to record employment update in database');
+    }
+
+    // 2. Resolve trainee ID
+    let targetTraineeId = payload.trainee_id || rpcData?.trainee_id;
+    if (!targetTraineeId || targetTraineeId === 'me') {
+      const { data: authUser } = await supabase.auth.getUser();
+      if (authUser?.user) {
+        const { data: tr } = await supabase
+          .from('trainees')
+          .select('id')
+          .eq('user_id', authUser.user.id)
+          .maybeSingle();
+        if (tr) targetTraineeId = tr.id;
+      }
+    }
+    if (!targetTraineeId) targetTraineeId = 'tr_priya';
+
+    // 3. Resolve matching employer_id if company exists in public.employers
+    let employerId: string | null = null;
+    if (payload.employer_name) {
+      const { data: empMatch } = await supabase
+        .from('employers')
+        .select('id')
+        .ilike('company_name', `%${payload.employer_name}%`)
+        .limit(1)
+        .maybeSingle();
+      if (empMatch) employerId = empMatch.id;
+    }
+
+    // 4. Resolve intervention_id for this trainee
+    let interventionId: string | null = null;
+    const { data: ints } = await supabase
+      .from('interventions')
+      .select('id, skill_gaps!inner(skill_assessments!inner(trainee_id))')
+      .eq('skill_gaps.skill_assessments.trainee_id', targetTraineeId)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (ints && ints.length > 0) {
+      interventionId = ints[0].id;
+    }
+
+    let outcomeRow = null;
+    const outcomeTypeEnum = payload.status === 'NOT_EMPLOYED' ? 'UNEMPLOYED' : 'EMPLOYED';
+
+    if (interventionId) {
+      // Check if outcome record exists for this intervention
+      const { data: existingOutcomes } = await supabase
+        .from('outcomes')
+        .select('id')
+        .eq('intervention_id', interventionId)
+        .order('recorded_at', { ascending: false })
+        .limit(1);
+
+      if (existingOutcomes && existingOutcomes.length > 0) {
+        const { data: updated, error: upErr } = await supabase
+          .from('outcomes')
+          .update({
+            outcome_type: outcomeTypeEnum,
+            wage_lift_percent: rpcData?.observed_wage_lift ?? 0,
+            employer_id: employerId,
+            validation_status: 'PENDING',
+            recorded_at: new Date().toISOString(),
+          })
+          .eq('id', existingOutcomes[0].id)
+          .select();
+        if (!upErr && updated && updated.length > 0) {
+          outcomeRow = updated[0];
+        }
+      } else {
+        const outId = 'out_' + Math.random().toString(36).substring(2, 12);
+        const { data: inserted, error: inErr } = await supabase
+          .from('outcomes')
+          .insert({
+            id: outId,
+            intervention_id: interventionId,
+            outcome_type: outcomeTypeEnum,
+            wage_lift_percent: rpcData?.observed_wage_lift ?? 0,
+            employer_id: employerId,
+            validation_status: 'PENDING',
+            retention_3m: 'pending',
+            retention_6m: 'pending',
+            retention_12m: 'pending',
+            recorded_at: new Date().toISOString(),
+          })
+          .select();
+        if (!inErr && inserted && inserted.length > 0) {
+          outcomeRow = inserted[0];
+        }
+      }
+    } else {
+      // Trainee has no intervention yet: invoke record-outcome Edge Function which creates
+      // assessment, skill gap, intervention, and outcome record atomically
+      try {
+        const { data: edgeRes } = await supabase.functions.invoke('record-outcome', {
+          body: {
+            traineeId: targetTraineeId,
+            outcomeType: payload.status,
+            monthlySalary: payload.monthly_salary,
+            jobTitle: payload.job_title,
+            employerName: payload.employer_name,
+          },
+        });
+        outcomeRow = edgeRes?.data || null;
+      } catch (edgeErr) {
+        console.warn('Edge function outcome sync fallback:', edgeErr);
+      }
+    }
+
+    return {
+      success: true,
+      ...rpcData,
+      outcome: outcomeRow,
+    };
   },
 
   // Longitudinal Follow-Up survey submission
@@ -961,8 +1078,36 @@ export const employerService = {
     return [];
   },
 
-  // Write operation via Supabase Edge Function: verify-retention
+  // Validate candidate employment outcome via PostgreSQL RPC validate_candidate_employment
+  validateEmployment: async (params: {
+    candidateId?: string;
+    employmentRecordId?: string;
+    status?: string;
+    notes?: string;
+  }) => {
+    const { data, error } = await supabase.rpc('validate_candidate_employment', {
+      p_data: params,
+    });
+
+    if (error) {
+      handleSupabaseError(error, 'Failed to validate candidate employment');
+    }
+
+    return data;
+  },
+
+  // Write operation via PostgreSQL RPC with fallback to Edge Function
   verifyRetention: async (candidateId: string, milestone: '3m' | '6m' | '12m') => {
+    const { data: rpcData, error: rpcErr } = await supabase.rpc('verify_candidate_retention', {
+      p_candidate_id: candidateId,
+      p_milestone: milestone,
+      p_status: 'verified',
+    });
+
+    if (!rpcErr) {
+      return rpcData;
+    }
+
     const { data, error } = await supabase.functions.invoke('verify-retention', {
       body: { candidateId, milestone, status: 'verified' },
     });

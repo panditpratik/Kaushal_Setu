@@ -49,7 +49,7 @@ export const Footer: React.FC = () => {
                 <a href="#metrics" className="hover:text-[#0F253B] transition-colors">Outcome Benchmarks</a>
               </li>
               <li>
-                <a href="#anti-ghosting" className="hover:text-[#0F253B] transition-colors">Longitudinal Telemetry</a>
+                <a href="#anti-ghosting" className="hover:text-[#0F253B] transition-colors">Longitudinal Tracking</a>
               </li>
             </ul>
           </div>
@@ -61,16 +61,16 @@ export const Footer: React.FC = () => {
             </h4>
             <ul className="space-y-2 text-xs text-[#52667A]">
               <li>
-                <a href="#anti-ghosting" className="hover:text-[#0F253B] transition-colors">3-Party Consensus</a>
+                <a href="#anti-ghosting" className="hover:text-[#0F253B] transition-colors">Multi-Party Validation</a>
               </li>
               <li>
-                <span className="text-[#52667A]">EPFO Contribution Pulse</span>
+                <span className="text-[#52667A]">Employer Validation Sign-Off</span>
               </li>
               <li>
-                <span className="text-[#52667A]">Aadhaar Biometric Proof</span>
+                <span className="text-[#52667A]">Institutional Trainee Registry</span>
               </li>
               <li>
-                <span className="text-[#52667A]">Anti-Ghosting Audit Logs</span>
+                <span className="text-[#52667A]">Outcome Audit Ledger</span>
               </li>
             </ul>
           </div>
@@ -106,7 +106,7 @@ export const Footer: React.FC = () => {
           <div className="flex flex-wrap items-center justify-center sm:justify-end gap-x-3 gap-y-1 text-[#47617C]">
             <span className="hover:text-[#0F253B] cursor-pointer">Privacy Policy</span>
             <span>·</span>
-            <span className="hover:text-[#0F253B] cursor-pointer">Terms of Telemetry</span>
+            <span className="hover:text-[#0F253B] cursor-pointer">Terms of Service</span>
             <span>·</span>
             <span className="hover:text-[#0F253B] cursor-pointer">Accessibility Statement</span>
           </div>

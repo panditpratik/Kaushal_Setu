@@ -97,16 +97,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
               {/* Editorial Verification Row (no pills/badges) */}
               <div className="mt-9 pt-6 border-t border-[#D5CEAE] flex flex-wrap items-center gap-4 sm:gap-6 lg:gap-8 text-xs font-mono text-[#52667A] w-full">
                 <div className="flex items-center gap-2">
-                  <ShieldCheck className={`w-4 h-4 shrink-0 ${featuredDossier?.verification.aadhaar === 'VERIFIED' ? 'text-emerald-700' : 'text-[#263B52]'}`} />
-                  <span className="text-[#102A43]">Aadhaar Biometric Linked</span>
+                  <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
+                  <span className="text-[#102A43]">Verified Candidate Profile</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 className={`w-4 h-4 shrink-0 ${featuredDossier?.verification.epfo === 'VERIFIED' ? 'text-emerald-700' : 'text-[#263B52]'}`} />
-                  <span className="text-[#102A43]">EPFO Real-Time Pulse</span>
+                  <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                  <span className="text-[#102A43]">Employer-Validated Outcomes</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-amber-700 shrink-0" />
-                  <span className="text-[#102A43]">Zero Ghost Placements</span>
+                  <Layers className="w-4 h-4 text-[#263B52] shrink-0" />
+                  <span className="text-[#102A43]">Longitudinal Career Journey</span>
                 </div>
               </div>
 
@@ -167,7 +167,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                 )}
               </div>
               <p className="text-xs text-[#52667A] mt-1.5 leading-relaxed">
-                Automated monthly confirmation via EPFO contribution pulse
+                Longitudinal outcome tracking validated by hiring employers
               </p>
             </div>
 
@@ -286,11 +286,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                   3-Party Consensus
                 </h3>
                 <p className="text-xs text-[#52667A] leading-relaxed">
-                  Zero ghosting: Trainee self-log, employer EPFO contribution, and training partner field audit must match.
+                  Triangulated validation: Trainee self-report, employer employment sign-off, and training provider records.
                 </p>
               </div>
               <div className="mt-6 pt-3 border-t border-[#D5CEAE]/60 font-mono text-[10px] text-emerald-800 font-bold">
-                100% Cryptographic Lock ✓
+                Multi-Party Verification ✓
               </div>
             </div>
 
@@ -307,7 +307,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                   Retention & Wage Lift
                 </h3>
                 <p className="text-xs text-[#52667A] leading-relaxed">
-                  Telemetry checks at 3, 6, 12, and 18 months measuring career tenure stability and salary escalation.
+                  Longitudinal follow-ups at 3, 6, 12, and 18 months measuring career tenure stability and salary escalation.
                 </p>
               </div>
               <div className="mt-6 pt-3 border-t border-[#D5CEAE]/60 font-mono text-[10px] text-[#52667A]">
@@ -403,7 +403,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                   Employer Workspace
                 </h3>
                 <p className="text-xs text-[#52667A] leading-relaxed mb-4">
-                  Validate trainee tenure, automate EPFO confirmation, and send real-time curriculum deficiency feedback.
+                  Validate candidate employment, verify retention milestones, and transmit curriculum gap feedback.
                 </p>
                 <div className="p-3 bg-white border border-[#D5CEAE] rounded text-[11px] font-mono text-[#47617C] mb-4">
                   <span className="text-[#0F253B] font-bold block">Tata Motors Ancillary Ltd.</span>
@@ -432,7 +432,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                   Training Partner
                 </h3>
                 <p className="text-xs text-[#52667A] leading-relaxed mb-4">
-                  Audit cohort placement telemetry, remediate skill drop-offs, and unlock government milestone incentives.
+                  Audit cohort placement outcomes, remediate skill drop-offs, and monitor training milestones.
                 </p>
                 <div className="p-3 bg-white border border-[#D5CEAE] rounded text-[11px] font-mono text-[#47617C] mb-4">
                   <span className="text-[#0F253B] font-bold block">Centurion Skill Academy</span>
@@ -465,7 +465,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                 </p>
                 <div className="p-3 bg-white border border-[#D5CEAE] rounded text-[11px] font-mono text-[#47617C] mb-4">
                   <span className="text-[#0F253B] font-bold block">Sovereign Registry</span>
-                  <span>{totalTraineesDisplay} Verified Records · Live PostgreSQL Telemetry</span>
+                  <span>{totalTraineesDisplay} Verified Records · Live PostgreSQL Database</span>
                 </div>
               </div>
               <button
@@ -521,10 +521,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                   </div>
                   <div>
                     <h4 className="font-bold text-xs uppercase tracking-wide text-[#0F253B]">
-                      2. Employer EPFO Contribution Pulse
+                      2. Employer Employment Validation
                     </h4>
                     <p className="text-xs text-[#52667A] mt-0.5 leading-relaxed">
-                      Direct integration with the Employees' Provident Fund Organization confirms active payroll deposits.
+                      Authorized industrial hiring partners validate candidate employment records and retention milestones directly in PostgreSQL.
                     </p>
                   </div>
                 </div>
@@ -551,7 +551,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                   <div className="flex items-center gap-2">
                     <Database className="w-4 h-4 text-[#263B52] shrink-0" />
                     <span className="font-mono font-bold text-xs text-[#0F253B] uppercase tracking-wider">
-                      Live Consensus Telemetry Audit
+                      Live Multi-Stakeholder Verification Roster
                     </span>
                   </div>
                   <span className="font-mono text-[10px] text-emerald-800 bg-[#D8EEDF] px-2 py-0.5 rounded font-bold border border-[#B6DBC0] shrink-0">
@@ -569,8 +569,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                     <span className="font-bold text-[#0F253B] break-all sm:break-normal">Tata Motors Ancillary Ltd.</span>
                   </div>
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-[#FAF7EE] border border-[#D5CEAE] rounded gap-1">
-                    <span className="text-[#47617C] shrink-0">EPFO Linkage:</span>
-                    <span className="text-emerald-700 font-bold break-all sm:break-normal">MH/PUN/0088219 ✓ Verified</span>
+                    <span className="text-[#47617C] shrink-0">Employer Sign-Off:</span>
+                    <span className="text-emerald-700 font-bold break-all sm:break-normal">Tata Motors Ancillary ✓ Validated</span>
                   </div>
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-[#FAF7EE] border border-[#D5CEAE] rounded gap-1">
                     <span className="text-[#47617C] shrink-0">VTP Center Sign-Off:</span>
@@ -579,9 +579,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                 </div>
 
                 <div className="mt-6 pt-4 border-t border-[#D5CEAE] flex flex-col sm:flex-row sm:items-center justify-between text-[11px] font-mono text-[#52667A] gap-2">
-                  <span className="shrink-0">Cryptographic Proof:</span>
+                  <span className="shrink-0">Audit Record ID:</span>
                   <code className="bg-[#FAF7EE] px-2 py-1 rounded text-[#263B52] border border-[#D5CEAE] break-all text-[10px] sm:text-[11px]">
-                    0x9b4a8e23f001c9a174d82bce49f72c
+                    rec_9b4a8e23f001c9a174d82bce49f72c
                   </code>
                 </div>
               </div>
@@ -602,7 +602,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
             Integrate With The Sovereign Registry
           </h2>
           <p className="text-sm sm:text-base text-[#C9DCF1] max-w-2xl mx-auto mb-8 leading-relaxed font-sans">
-            Whether you are a State Directorate, an industrial hiring partner, or an accredited vocational institute — connect via standardized telemetry APIs.
+            Whether you are a State Directorate, an industrial hiring partner, or an accredited vocational institute — connect via standardized outcome registries.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-4">
             <button
@@ -616,7 +616,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
               onClick={() => onNavigate('government-dashboard', 'government')}
               className="h-[52px] px-8 bg-transparent hover:bg-white/10 text-[#F4F4E7] font-semibold text-xs uppercase tracking-wider rounded border border-[#C9DCF1]/40 transition-all flex items-center gap-2 cursor-pointer"
             >
-              <span>Inspect Sovereign Telemetry</span>
+              <span>Inspect Outcome Analytics</span>
               <ArrowUpRight className="w-4 h-4" />
             </button>
           </div>

@@ -1637,7 +1637,7 @@ export function GovernmentDashboard({
                     </span>
                   </div>
                   <p className="text-xs text-[#5E6B75] mt-2">
-                    Longitudinal surveys are verified via employer sign-off or EPFO employment active records.
+                    Longitudinal surveys are verified via employer sign-off and validated employment records.
                   </p>
                 </div>
               </div>

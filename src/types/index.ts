@@ -95,6 +95,7 @@ export interface EmployerCandidate {
   skillDeficiency?: string;
   wageStatus: string;
   traineeId?: string;
+  employmentRecordId?: string;
   validationStatus?: string;
   outcomeId?: string;
 }

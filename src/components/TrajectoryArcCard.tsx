@@ -19,12 +19,12 @@ export const TrajectoryCardSkeleton: React.FC = () => (
         <span className="w-2 h-2 rounded-full bg-[#F2C8B4] shrink-0" />
         <span>LONGITUDINAL TRAJECTORY ARC</span>
       </span>
-      <span className="text-[#52667A] font-semibold shrink-0">TEL-NODE #4892</span>
+      <span className="text-[#52667A] font-semibold shrink-0">REGISTRY #4892</span>
     </div>
 
     {/* The SVG Plane Illustration Placeholder */}
     <div className="w-full aspect-[16/10] rounded border border-[#D5CEAE] overflow-hidden bg-[#FAF7EE] flex items-center justify-center">
-      <span className="text-xs font-mono text-[#52667A]">Syncing Telemetry Node...</span>
+      <span className="text-xs font-mono text-[#52667A]">Loading Career Trajectory...</span>
     </div>
 
     {/* Trajectory Velocity Footer Strip Skeleton */}
@@ -43,14 +43,14 @@ export const TrajectoryCardError: React.FC<{ error?: string | null; onRetry?: ()
     <div className="flex flex-wrap items-center justify-between gap-2 pb-3.5 border-b border-[#FCA5A5] mb-3.5 text-[11px] font-mono text-[#B91C1C]">
       <span className="font-bold uppercase tracking-wider flex items-center gap-2">
         <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
-        <span>TRAJECTORY NODE OFFLINE</span>
+        <span>TRAJECTORY RECORD UNAVAILABLE</span>
       </span>
       <span className="text-[#991B1B] font-semibold shrink-0">CONNECTION ERROR</span>
     </div>
 
     <div className="w-full py-8 rounded border border-red-200 overflow-hidden bg-red-50/50 flex flex-col items-center justify-center text-center p-4">
       <p className="text-xs font-mono text-[#991B1B] mb-3 max-w-sm">
-        {error || 'Unable to connect to KaushalSetu telemetry database.'}
+        {error || 'Unable to connect to KaushalSetu database.'}
       </p>
       {onRetry && (
         <button
@@ -103,7 +103,7 @@ export const TrajectoryArcCard: React.FC<TrajectoryArcCardProps> = ({
           <span className="w-2 h-2 rounded-full bg-[#F2C8B4] shrink-0" />
           <span>LONGITUDINAL TRAJECTORY ARC</span>
         </span>
-        <span className="text-[#52667A] font-semibold shrink-0">TEL-NODE #4892</span>
+        <span className="text-[#52667A] font-semibold shrink-0">REGISTRY #4892</span>
       </div>
 
       {/* The SVG Plane Illustration */}

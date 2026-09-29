@@ -2084,7 +2084,7 @@ export function ProviderDashboard({
               </div>
 
               <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded text-[11px] font-mono text-amber-900">
-                <strong>Statutory Notice:</strong> This action permanently logs a cohort disengagement event in PostgreSQL audit telemetry and marks the enrollment status as DROPPED.
+                <strong>Important Notice:</strong> This action permanently logs a cohort disengagement event in PostgreSQL audit logs and updates the enrollment status to DROPPED.
               </div>
             </div>
 
