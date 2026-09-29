@@ -62,6 +62,7 @@ export function GovernmentDashboard({
   const [isNewInterventionOpen, setIsNewInterventionOpen] = useState<boolean>(false);
   const [selectedInterventionForUpdate, setSelectedInterventionForUpdate] = useState<any | null>(null);
   const [actionSuccessNotice, setActionSuccessNotice] = useState<string | null>(null);
+  const [actionErrorNotice, setActionErrorNotice] = useState<string | null>(null);
 
   // Form States for Interventions
   const [newIntervention, setNewIntervention] = useState({
@@ -126,7 +127,8 @@ export function GovernmentDashboard({
   const handleRecordInterventionSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newIntervention.targetName.trim() || !newIntervention.description.trim()) {
-      alert('Target name and signal description are mandatory.');
+      setActionErrorNotice('Target name and signal description are mandatory.');
+      setTimeout(() => setActionErrorNotice(null), 4000);
       return;
     }
     try {
@@ -151,7 +153,8 @@ export function GovernmentDashboard({
       setTimeout(() => setActionSuccessNotice(null), 4000);
       fetchIntelligence(true);
     } catch (err: any) {
-      alert('Failed to record intervention: ' + (err.message || 'Database error'));
+      setActionErrorNotice('Failed to record intervention: ' + (err.message || 'Database error'));
+      setTimeout(() => setActionErrorNotice(null), 5000);
     }
   };
 
@@ -172,7 +175,8 @@ export function GovernmentDashboard({
       setTimeout(() => setActionSuccessNotice(null), 4000);
       fetchIntelligence(true);
     } catch (err: any) {
-      alert('Failed to update intervention: ' + (err.message || 'Database error'));
+      setActionErrorNotice('Failed to update intervention: ' + (err.message || 'Database error'));
+      setTimeout(() => setActionErrorNotice(null), 5000);
     }
   };
 
@@ -286,6 +290,18 @@ export function GovernmentDashboard({
             <span>{actionSuccessNotice}</span>
           </div>
           <button onClick={() => setActionSuccessNotice(null)} className="text-[#087F8C] hover:text-[#16212B]">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {actionErrorNotice && (
+        <div className="bg-red-50 border-b border-red-300 text-red-800 px-6 py-2.5 text-xs font-mono font-bold flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-red-600" />
+            <span>{actionErrorNotice}</span>
+          </div>
+          <button onClick={() => setActionErrorNotice(null)} className="text-red-600 hover:text-red-900">
             <X className="w-3.5 h-3.5" />
           </button>
         </div>

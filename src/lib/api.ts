@@ -1059,6 +1059,22 @@ export const traineeService = {
     if (error) handleSupabaseError(error, 'Failed to submit follow-up survey in database');
     return data;
   },
+
+  // Add Trainee Certificate via PostgreSQL RPC record_trainee_certificate
+  addCertificate: async (payload: {
+    trainee_id?: string;
+    certificate_name: string;
+    issuing_body?: string;
+    certificate_number?: string;
+    issued_at?: string;
+    course_id?: string;
+  }) => {
+    const { data, error } = await supabase.rpc('record_trainee_certificate', {
+      p_data: payload,
+    });
+    if (error) handleSupabaseError(error, 'Failed to record trainee certificate');
+    return data;
+  },
 };
 
 export const employerService = {

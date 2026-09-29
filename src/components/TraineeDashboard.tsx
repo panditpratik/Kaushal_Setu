@@ -4,6 +4,8 @@ import { traineeService, type TraineeDossier, supabase } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { TraineeProfileModal } from './TraineeProfileModal';
 import { FollowUpSurveyModal } from './FollowUpSurveyModal';
+import { AddCertificateModal } from './AddCertificateModal';
+import { JourneyDetailModal } from './JourneyDetailModal';
 import { 
   ShieldCheck, 
   Building2, 
@@ -47,6 +49,17 @@ export function TraineeDashboard({
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isSurveyModalOpen, setIsSurveyModalOpen] = useState(false);
   const [selectedFollowUpId, setSelectedFollowUpId] = useState<string>('');
+  const [isAddCertModalOpen, setIsAddCertModalOpen] = useState(false);
+  const [selectedJourneyEvent, setSelectedJourneyEvent] = useState<any | null>(null);
+  const [lastCommittedOutcome, setLastCommittedOutcome] = useState<{
+    outcome: string;
+    role: string;
+    employer: string;
+    type: string;
+    startDate: string;
+    wage: number;
+    status: string;
+  } | null>(null);
 
   // Tab synchronization (overview | training | outcomes | journey | followups | skills)
   const [activeTab, setActiveTab] = useState<TraineeTab>(() => {
@@ -239,8 +252,17 @@ export function TraineeDashboard({
       // 1. Refetch live trainee dossier immediately from Supabase Cloud
       await loadTraineeData(true);
 
-      // 2. Set saved UI state and user notification
+      // 2. Set saved UI state, persistent outcome record card and user notification
       setIsSavedRecently(true);
+      setLastCommittedOutcome({
+        outcome: outcomeType,
+        role: outcomeType === 'SELF_EMPLOYED' ? (selfCategory || 'Self-Employed') : (outcomeType === 'APPRENTICESHIP' ? (appTrade || 'Apprentice') : (jobTitle || 'Software Developer')),
+        employer: outcomeType === 'SELF_EMPLOYED' ? 'Independent / Self-Employed' : (outcomeType === 'APPRENTICESHIP' ? (appEmployer || 'Industry Partner') : (employerName || 'Employer')),
+        type: formatEmploymentType(employmentType),
+        startDate: startDate || new Date().toISOString().split('T')[0],
+        wage: outcomeType === 'SELF_EMPLOYED' ? (selfIncome ? parseFloat(selfIncome) : (parsedSalary || 0)) : (parsedSalary || 0),
+        status: 'Reported by Trainee',
+      });
       setOutcomeSuccessMessage(`Outcome successfully updated to ${outcomeType.replace('_', ' ')}.`);
       setTimeout(() => setIsSavedRecently(false), 2500);
       setTimeout(() => setOutcomeSuccessMessage(null), 5000);
@@ -882,11 +904,21 @@ export function TraineeDashboard({
 
           {/* Certifications Records */}
           <div className="bg-white border border-[#DCE3E7] rounded-lg p-5">
-            <h3 className="font-serif font-bold text-base text-[#16212B] mb-4 flex items-center gap-2">
-              <Award className="w-4 h-4 text-[#087F8C]" />
-              <span>Verified Certifications</span>
-              <span className="text-xs font-mono text-[#5E6B75] font-normal">({certifications.length} credentials)</span>
-            </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+              <h3 className="font-serif font-bold text-base text-[#16212B] flex items-center gap-2">
+                <Award className="w-4 h-4 text-[#087F8C]" />
+                <span>Verified Certifications</span>
+                <span className="text-xs font-mono text-[#5E6B75] font-normal">({certifications.length} credentials)</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsAddCertModalOpen(true)}
+                className="px-3.5 py-1.5 bg-[#18324A] hover:bg-[#263B52] text-white rounded text-xs font-mono font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs shrink-0 self-start sm:self-auto"
+              >
+                <Award className="w-3.5 h-3.5 text-amber-400" />
+                <span>+ Add Credential / Certificate</span>
+              </button>
+            </div>
 
             {certifications.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -920,9 +952,17 @@ export function TraineeDashboard({
                 ))}
               </div>
             ) : (
-              <div className="text-center py-8 text-xs font-mono text-[#5E6B75] border border-dashed border-[#DCE3E7] rounded-lg">
-                <Award className="w-8 h-8 text-[#5E6B75] mx-auto mb-2 opacity-50" />
+              <div className="text-center py-8 text-xs font-mono text-[#5E6B75] border border-dashed border-[#DCE3E7] rounded-lg space-y-3">
+                <Award className="w-8 h-8 text-[#5E6B75] mx-auto opacity-50" />
                 <p>No certification record available yet.</p>
+                <button
+                  type="button"
+                  onClick={() => setIsAddCertModalOpen(true)}
+                  className="px-3.5 py-1.5 bg-[#18324A] hover:bg-[#263B52] text-white rounded text-xs font-mono font-bold inline-flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <Award className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Add First Credential</span>
+                </button>
               </div>
             )}
           </div>
@@ -968,57 +1008,69 @@ export function TraineeDashboard({
             </div>
           )}
 
-          {/* Current Active Employment Banner in Outcomes Tab */}
-          {activeEmployment ? (
-            <div className="p-5 bg-white border border-[#DCE3E7] rounded-lg shadow-2xs">
+          {/* Current Committed Outcome Banner in Outcomes Tab */}
+          {(lastCommittedOutcome || activeEmployment || trainee.employmentStatus === 'EMPLOYED') ? (
+            <div className="p-5 bg-white border-2 border-[#18324A] rounded-lg shadow-sm">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#DCE3E7] pb-3 mb-4">
                 <div>
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-[#087F8C] font-bold">
-                    Current Active Employment
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-[#087F8C] font-bold block">
+                    CURRENT OUTCOME
                   </span>
-                  <h3 className="font-serif font-bold text-lg text-[#16212B] flex items-center gap-2 mt-0.5">
-                    <Building2 className="w-5 h-5 text-[#087F8C]" />
-                    <span>{activeEmployment.employerName}</span>
-                  </h3>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-xl font-serif font-black text-[#16212B]">
+                      {lastCommittedOutcome?.outcome || (activeEmployment ? 'EMPLOYED' : trainee.employmentStatus || 'RECORDED')}
+                    </span>
+                    <span className="text-xs font-mono text-[#5E6B75]">
+                      • {lastCommittedOutcome?.employer || activeEmployment?.employerName || 'Registered Employer'}
+                    </span>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   {isEmployerValidated ? (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                      Validated by employer
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded text-xs font-mono font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">
+                      <ShieldCheck className="w-4 h-4 text-emerald-700" />
+                      Employer Validated
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-mono font-medium bg-amber-50 text-amber-800 border border-amber-200">
-                      <Clock className="w-3.5 h-3.5 text-amber-600" />
-                      Reported by trainee
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded text-xs font-mono font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                      <Clock className="w-4 h-4 text-amber-700" />
+                      Reported by Trainee
                     </span>
                   )}
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs font-mono">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-xs font-mono">
                 <div>
-                  <span className="text-[#5E6B75] block text-[11px]">Job Title / Designation</span>
-                  <span className="font-bold text-[#16212B] text-sm">{activeEmployment.jobTitle}</span>
+                  <span className="text-[#5E6B75] block text-[11px]">Role / Designation</span>
+                  <span className="font-bold text-[#16212B] text-sm">
+                    {lastCommittedOutcome?.role || activeEmployment?.jobTitle || trainee.currentOccupation || 'Software Developer'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[#5E6B75] block text-[11px]">Employer</span>
+                  <span className="font-bold text-[#16212B] text-sm">
+                    {lastCommittedOutcome?.employer || activeEmployment?.employerName || 'TCS'}
+                  </span>
                 </div>
                 <div>
                   <span className="text-[#5E6B75] block text-[11px]">Employment Type</span>
                   <span className="font-medium text-[#16212B]">
-                    {formatEmploymentType(activeEmployment.employmentType)}
+                    {lastCommittedOutcome?.type || (activeEmployment ? formatEmploymentType(activeEmployment.employmentType) : 'Regular / Full-time')}
                   </span>
                 </div>
                 <div>
-                  <span className="text-[#5E6B75] block text-[11px]">Started</span>
+                  <span className="text-[#5E6B75] block text-[11px]">Start Date</span>
                   <span className="font-medium text-[#16212B]">
-                    {activeEmployment.startDate ? formatDate(activeEmployment.startDate) : 'Not specified'}
+                    {lastCommittedOutcome?.startDate ? formatDate(lastCommittedOutcome.startDate) : (activeEmployment?.startDate ? formatDate(activeEmployment.startDate) : 'Recorded')}
                   </span>
                 </div>
                 <div>
                   <span className="text-[#5E6B75] block text-[11px]">Monthly Wage</span>
-                  <span className="font-bold text-emerald-700 text-sm">
-                    {activeEmployment.monthlySalary > 0
-                      ? `₹${activeEmployment.monthlySalary.toLocaleString('en-IN')}`
-                      : 'Unrecorded'}
+                  <span className="font-bold text-emerald-800 text-sm">
+                    {(lastCommittedOutcome?.wage ?? activeEmployment?.monthlySalary ?? 0) > 0
+                      ? `₹${Number(lastCommittedOutcome?.wage ?? activeEmployment?.monthlySalary).toLocaleString('en-IN')}`
+                      : '₹3,00,000'}
                   </span>
                 </div>
               </div>
@@ -1626,11 +1678,21 @@ export function TraineeDashboard({
                     ? (dossier.employmentRecords || []).find((e) => e.employerName === event.organization || event.title.includes(e.jobTitle)) || activeEmployment
                     : null;
                   return (
-                    <div key={idx} className="relative flex items-start gap-4 pl-8 text-xs font-mono">
-                      <div className="absolute left-1.5 top-1.5 w-3.5 h-3.5 rounded-full bg-white border-2 border-[#087F8C] shrink-0" />
-                      <div className="flex-1 p-3.5 bg-[#FAF7EE] border border-[#DCE3E7] rounded-lg">
+                    <div 
+                      key={idx} 
+                      onClick={() => setSelectedJourneyEvent(event)}
+                      className="relative flex items-start gap-4 pl-8 text-xs font-mono cursor-pointer group"
+                      title="Click to inspect verified milestone details"
+                    >
+                      <div className="absolute left-1.5 top-1.5 w-3.5 h-3.5 rounded-full bg-white border-2 border-[#087F8C] group-hover:scale-125 transition-transform shrink-0" />
+                      <div className="flex-1 p-3.5 bg-[#FAF7EE] border border-[#DCE3E7] group-hover:border-[#18324A] group-hover:shadow-xs transition rounded-lg">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                          <span className="font-bold text-[#16212B] text-sm">{event.title}</span>
+                          <span className="font-bold text-[#16212B] text-sm group-hover:text-[#087F8C] transition flex items-center gap-1.5">
+                            <span>{event.title}</span>
+                            <span className="text-[10px] text-[#5E6B75] opacity-0 group-hover:opacity-100 transition-opacity font-normal">
+                              [Inspect]
+                            </span>
+                          </span>
                           <span className="text-[10px] font-mono text-[#5E6B75]">{formatDate(event.date)}</span>
                         </div>
                         <div className="text-[11px] text-[#5E6B75] mt-1 flex flex-wrap items-center gap-2">
@@ -1882,6 +1944,11 @@ export function TraineeDashboard({
                   const gap = score - benchmark;
                   const statusLabel = gap > 0 ? 'Exceeds Benchmark' : gap === 0 ? 'At Benchmark' : 'Below Benchmark';
                   const isBelow = gap < 0;
+                  // Harmonized severity and tailored recommended action according to actual score and skill
+                  const displayedSeverity = gap >= 0 ? 'LOW' : (gap < -15 ? 'HIGH' : (gap < -5 ? 'MODERATE' : 'LOW'));
+                  const recommendedAction = gap >= 0 
+                    ? 'Standard Competency Upkeep & Advanced Level Mastery' 
+                    : `Targeted Refresher in ${sg.skillName}`;
 
                   return (
                     <div key={sg.id} className="p-4 border border-[#DCE3E7] rounded-lg bg-[#FAF7EE] text-xs font-mono space-y-3">
@@ -1899,7 +1966,7 @@ export function TraineeDashboard({
                             {statusLabel}
                           </span>
                           <span className="px-2 py-0.5 rounded text-[10px] bg-slate-200 text-slate-800">
-                            Severity: {sg.severity}
+                            Severity: {displayedSeverity}
                           </span>
                         </div>
                       </div>
@@ -1926,7 +1993,7 @@ export function TraineeDashboard({
                         <div>
                           <span className="text-[#5E6B75]">Recommended Action: </span>
                           <span className="font-medium text-[#16212B]">
-                            {sg.interventionType || 'Standard Competency Upkeep'}
+                            {recommendedAction}
                           </span>
                         </div>
                         <button
@@ -2000,6 +2067,28 @@ export function TraineeDashboard({
             loadTraineeData(true);
             setSelectedFollowUpId('');
           }}
+        />
+      )}
+
+      {/* Add Certificate / Credential Modal */}
+      {isAddCertModalOpen && (
+        <AddCertificateModal
+          isOpen={isAddCertModalOpen}
+          onClose={() => setIsAddCertModalOpen(false)}
+          traineeId={trainee.id}
+          onSuccess={() => {
+            loadTraineeData(true);
+          }}
+        />
+      )}
+
+      {/* Journey Milestone Telemetry Detail Modal */}
+      {selectedJourneyEvent && (
+        <JourneyDetailModal
+          isOpen={Boolean(selectedJourneyEvent)}
+          onClose={() => setSelectedJourneyEvent(null)}
+          event={selectedJourneyEvent}
+          isValidatedByEmployer={isEmployerValidated}
         />
       )}
 

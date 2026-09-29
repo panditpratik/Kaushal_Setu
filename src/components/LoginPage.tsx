@@ -15,6 +15,7 @@ import {
   ChevronDown,
   GraduationCap,
   UserCheck,
+  Building2,
   ShieldCheck
 } from 'lucide-react';
 
@@ -42,7 +43,7 @@ export function LoginPage({ onLogin, onNavigateHome }: LoginPageProps) {
   const [password, setPassword] = useState('Password@123');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [accountType, setAccountType] = useState<'TRAINEE' | 'TRAINING_PROVIDER'>('TRAINEE');
+  const [accountType, setAccountType] = useState<'TRAINEE' | 'EMPLOYER' | 'TRAINING_PROVIDER'>('TRAINEE');
   const [otpCode, setOtpCode] = useState('');
 
   // UI state
@@ -101,24 +102,40 @@ export function LoginPage({ onLogin, onNavigateHome }: LoginPageProps) {
     setLoadingText('Creating account...');
 
     try {
-      const { user, session, confirmationRequired } = await signUp(
-        email.trim(),
-        password,
+      const cleanEmail = email.trim();
+      const cleanPassword = password;
+      await signUp(
+        cleanEmail,
+        cleanPassword,
         fullName.trim(),
         accountType
       );
 
-      if (confirmationRequired) {
-        setSuccessNotice(
-          'Account created! Please check your email to confirm your account before signing in.'
-        );
-      } else if (session && user) {
-        const targetView: AppView = accountType === 'TRAINING_PROVIDER' ? 'provider-dashboard' : 'trainee-dashboard';
-        const targetRole: StakeholderRole = accountType === 'TRAINING_PROVIDER' ? 'provider' : 'trainee';
-        onLogin(targetRole, targetView);
-      } else {
-        setSuccessNotice('Account registered successfully. You may now sign in.');
-        setMode('signin');
+      // Attempt immediate seamless login since email auto-confirm trigger is active
+      setLoadingText('Authenticating registered account...');
+      try {
+        const { profile } = await signIn(cleanEmail, cleanPassword);
+        const roleTargetMap: Record<string, { role: StakeholderRole; view: AppView }> = {
+          TRAINEE: { role: 'trainee', view: 'trainee-dashboard' },
+          EMPLOYER: { role: 'employer', view: 'employer-dashboard' },
+          TRAINING_PROVIDER: { role: 'provider', view: 'provider-dashboard' },
+          GOVERNMENT: { role: 'government', view: 'government-dashboard' },
+        };
+        const mapped = roleTargetMap[profile.role] || { 
+          role: accountType === 'EMPLOYER' ? 'employer' : accountType === 'TRAINING_PROVIDER' ? 'provider' : 'trainee', 
+          view: accountType === 'EMPLOYER' ? 'employer-dashboard' : accountType === 'TRAINING_PROVIDER' ? 'provider-dashboard' : 'trainee-dashboard' 
+        };
+        onLogin(mapped.role, mapped.view);
+        return;
+      } catch (autoLoginErr: any) {
+        if (autoLoginErr?.message?.toLowerCase().includes('confirm')) {
+          setSuccessNotice(
+            'Account created! Please verify your email before signing in.'
+          );
+        } else {
+          setSuccessNotice('Account registered successfully. You may now sign in.');
+          setMode('signin');
+        }
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'Unable to register account. Please try again.');
@@ -445,6 +462,11 @@ export function LoginPage({ onLogin, onNavigateHome }: LoginPageProps) {
                   onClick={() => {
                     setErrorMessage(null);
                     setSuccessNotice(null);
+                    setEmail('');
+                    setPassword('');
+                    setConfirmPassword('');
+                    setFullName('');
+                    setAccountType('TRAINEE');
                     setMode('signup');
                   }}
                   className="font-semibold text-[#263B52] hover:underline cursor-pointer ml-1"
@@ -473,7 +495,7 @@ export function LoginPage({ onLogin, onNavigateHome }: LoginPageProps) {
                     required
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
-                    placeholder="Priya Sharma"
+                    placeholder="e.g. Priya Sharma / HR Lead"
                     autoComplete="name"
                     className="w-full pl-9 pr-3 py-2 bg-[#FAF9F5] border border-[#D5CEAE] rounded-lg text-sm text-[#0F253B] placeholder:text-[#7A8C9E] focus:outline-none focus:ring-2 focus:ring-[#263B52]"
                   />
@@ -502,43 +524,59 @@ export function LoginPage({ onLogin, onNavigateHome }: LoginPageProps) {
 
               <div className="space-y-1">
                 <label className="text-xs font-mono font-semibold text-[#0F253B] block">
-                  Account Type
+                  Stakeholder Account Type
                 </label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-1.5">
                   <button
                     type="button"
                     onClick={() => setAccountType('TRAINEE')}
-                    className={`p-2.5 rounded-lg border text-left flex items-center gap-2 cursor-pointer transition-all ${
+                    className={`p-2 rounded-lg border text-left flex flex-col gap-1 cursor-pointer transition-all ${
                       accountType === 'TRAINEE'
                         ? 'border-[#263B52] bg-white ring-2 ring-[#263B52]/20'
                         : 'border-[#D5CEAE] bg-[#FAF9F5]'
                     }`}
                   >
-                    <GraduationCap className="w-4 h-4 text-[#263B52]" />
-                    <div>
+                    <div className="flex items-center gap-1.5">
+                      <GraduationCap className="w-3.5 h-3.5 text-[#263B52]" />
                       <div className="text-xs font-bold text-[#0F253B]">Trainee</div>
-                      <div className="text-[10px] text-[#52667A]">Job Seeker / Alumni</div>
                     </div>
+                    <div className="text-[10px] text-[#52667A]">Job Seeker</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setAccountType('EMPLOYER')}
+                    className={`p-2 rounded-lg border text-left flex flex-col gap-1 cursor-pointer transition-all ${
+                      accountType === 'EMPLOYER'
+                        ? 'border-[#263B52] bg-white ring-2 ring-[#263B52]/20'
+                        : 'border-[#D5CEAE] bg-[#FAF9F5]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <Building2 className="w-3.5 h-3.5 text-[#263B52]" />
+                      <div className="text-xs font-bold text-[#0F253B]">Employer</div>
+                    </div>
+                    <div className="text-[10px] text-[#52667A]">Hiring Org</div>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setAccountType('TRAINING_PROVIDER')}
-                    className={`p-2.5 rounded-lg border text-left flex items-center gap-2 cursor-pointer transition-all ${
+                    className={`p-2 rounded-lg border text-left flex flex-col gap-1 cursor-pointer transition-all ${
                       accountType === 'TRAINING_PROVIDER'
                         ? 'border-[#263B52] bg-white ring-2 ring-[#263B52]/20'
                         : 'border-[#D5CEAE] bg-[#FAF9F5]'
                     }`}
                   >
-                    <UserCheck className="w-4 h-4 text-[#263B52]" />
-                    <div>
+                    <div className="flex items-center gap-1.5">
+                      <UserCheck className="w-3.5 h-3.5 text-[#263B52]" />
                       <div className="text-xs font-bold text-[#0F253B]">Provider</div>
-                      <div className="text-[10px] text-[#52667A]">ITI / Skill Academy</div>
                     </div>
+                    <div className="text-[10px] text-[#52667A]">ITI / Academy</div>
                   </button>
                 </div>
                 <div className="text-[10px] text-[#7A8C9E] font-mono mt-1">
-                  * Note: Employer & Government roles require institutional accreditation provisioning.
+                  * Note: Government administrative roles require state directorate provisioning.
                 </div>
               </div>
 

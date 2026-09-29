@@ -32,7 +32,7 @@ interface AuthContextType {
     email: string,
     password: string,
     fullName: string,
-    requestedRole: 'TRAINEE' | 'TRAINING_PROVIDER'
+    requestedRole: 'TRAINEE' | 'EMPLOYER' | 'TRAINING_PROVIDER'
   ) => Promise<{ user: User | null; session: Session | null; confirmationRequired: boolean }>;
   signInWithOtp: (email: string) => Promise<void>;
   verifyOtp: (email: string, token: string) => Promise<{ user: User; profile: UserProfile | null }>;
@@ -251,7 +251,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     email: string,
     password: string,
     fullName: string,
-    requestedRole: 'TRAINEE' | 'TRAINING_PROVIDER'
+    requestedRole: 'TRAINEE' | 'EMPLOYER' | 'TRAINING_PROVIDER'
   ): Promise<{ user: User | null; session: Session | null; confirmationRequired: boolean }> => {
     setError(null);
     setLoading(true);
